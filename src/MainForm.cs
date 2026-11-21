@@ -687,10 +687,45 @@ namespace XiaoYaOpt
                 + (lowered > 0 ? string.Format("{0} 格技能等級超過副職業上限，已降級並重算時間。", lowered) : "");
         }
 
+        /// <summary>從正在執行的遊戲程序（視窗清單裡的視窗、或名為 eco 的程序）找出遊戲資料夾。</summary>
+        private string DetectGameDir()
+        {
+            var pids = new List<int>();
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                var w = row.Tag as WindowItem;
+                if (w != null) pids.Add((int)w.Pid);
+            }
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("eco")) pids.Add(p.Id);
+            foreach (int pid in pids.Distinct())
+            {
+                try
+                {
+                    using (var p = System.Diagnostics.Process.GetProcessById(pid))
+                    {
+                        string dir = Path.GetDirectoryName(p.MainModule.FileName);
+                        if (DualJobDb.LooksLikeGameDir(dir)) return dir;
+                    }
+                }
+                catch (Exception) { /* 權限不足或程序已結束：試下一個 */ }
+            }
+            return null;
+        }
+
         /// <summary>載入遊戲裡的副職業表；需要遊戲資料夾，必要時詢問使用者。</summary>
         private bool EnsureDualJobData(bool prompt)
         {
             if (_dj != null) return true;
+            if (!DualJobDb.LooksLikeGameDir(_gameDir))
+            {
+                // 先從正在執行的遊戲找出安裝資料夾，找不到才詢問使用者。
+                string detected = DetectGameDir();
+                if (detected != null)
+                {
+                    _gameDir = detected;
+                    if (_current != null) SaveSettings(); // 啟動載入中不存檔，避免寫入不完整的設定
+                }
+            }
             if (!DualJobDb.LooksLikeGameDir(_gameDir))
             {
                 if (!prompt) return false;
@@ -703,6 +738,7 @@ namespace XiaoYaOpt
                         return false;
                     }
                     _gameDir = dlg.SelectedPath;
+                    if (_current != null) SaveSettings();
                 }
             }
             try
