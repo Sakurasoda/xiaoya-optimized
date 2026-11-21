@@ -219,7 +219,7 @@ namespace XiaoYaOpt
             _cboSubJob.SelectedIndexChanged += OnJobChanged;
             AddLabel(_grpProfile, "Lv", 428, 59);
             _numSubLv.SetBounds(448, 56, 52, 23);
-            _numSubLv.Maximum = 999;
+            _numSubLv.Maximum = 110; // 副職業等級上限 110
             _numSubLv.ValueChanged += OnJobChanged;
             _tip.SetToolTip(_numSubLv, "副職業等級：只列出這個等級已經學得到的技能與技能等級。0 = 不限");
             _btnImport.Text = "從遊戲匯入…";
