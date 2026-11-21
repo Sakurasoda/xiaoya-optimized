@@ -89,15 +89,16 @@ namespace XiaoYaOpt
             return 1000;
         }
 
-        /// <summary>把快捷列轉成角色設定的技能欄位（最多 Profile.SlotCount 個）。回傳未能放入的項目數。</summary>
+        /// <summary>把快捷列轉成角色設定的技能格（有幾個就建幾格，1～15 格）。回傳超過上限未能放入的項目數。</summary>
         public static int ApplyTo(Profile p, MacroFile mf, SkillDb db)
         {
-            for (int i = 0; i < Profile.SlotCount; i++) p.Slots[i] = new SlotData { KeyName = "F" + (i + 1) };
-            int slot = 0, skipped = 0;
+            p.Slots.Clear();
+            int skipped = 0;
             foreach (var e in mf.Shortcuts)
             {
-                if (slot >= Profile.SlotCount) { skipped++; continue; }
-                var d = p.Slots[slot++];
+                if (p.Slots.Count >= Profile.MaxSlots) { skipped++; continue; }
+                var d = new SlotData();
+                p.Slots.Add(d);
                 d.KeyName = e.Key;
                 if (e.SkillName == null)
                 {
@@ -110,6 +111,7 @@ namespace XiaoYaOpt
                 // 只有能可靠算出時間的技能才自動啟用；其他的請使用者確認後手動勾選。
                 d.Enabled = ApplySuggestion(d, db);
             }
+            if (p.Slots.Count == 0) p.Slots.Add(new SlotData { KeyName = "F1" }); // 至少保留一格
             return skipped;
         }
 

@@ -9,7 +9,7 @@ namespace XiaoYaOpt
 {
     internal sealed class MainForm : Form
     {
-        private const int SlotCount = Profile.SlotCount;
+        private const int MaxRows = Profile.MaxSlots;
         private const int HotkeyId = 1;
         private const int VK_F10 = 0x79;
 
@@ -63,14 +63,18 @@ namespace XiaoYaOpt
         private readonly Button _btnDb = new Button();
         private readonly Label _lblDb = new Label();
         private readonly Label _lblHint = new Label();
-        private readonly CheckBox[] _chkEnabled = new CheckBox[SlotCount];
-        private readonly ComboBox[] _cboKey = new ComboBox[SlotCount];
-        private readonly ComboBox[] _cboSkill = new ComboBox[SlotCount];
-        private readonly ComboBox[] _cboLv = new ComboBox[SlotCount];
+        private readonly Panel _slotPanel = new Panel();
+        private readonly Button _btnAddSlot = new Button();
+        private readonly Label _lblSlotCount = new Label();
+        private readonly Button[] _btnDel = new Button[MaxRows];
+        private readonly CheckBox[] _chkEnabled = new CheckBox[MaxRows];
+        private readonly ComboBox[] _cboKey = new ComboBox[MaxRows];
+        private readonly ComboBox[] _cboSkill = new ComboBox[MaxRows];
+        private readonly ComboBox[] _cboLv = new ComboBox[MaxRows];
         private const string ManualItem = "（手動設定）";
-        private readonly NumericUpDown[] _numInterval = new NumericUpDown[SlotCount];
-        private readonly CheckBox[] _chkMouse = new CheckBox[SlotCount];
-        private readonly NumericUpDown[] _numDelay = new NumericUpDown[SlotCount];
+        private readonly NumericUpDown[] _numInterval = new NumericUpDown[MaxRows];
+        private readonly CheckBox[] _chkMouse = new CheckBox[MaxRows];
+        private readonly NumericUpDown[] _numDelay = new NumericUpDown[MaxRows];
 
         // 選項
         private readonly GroupBox _grpOptions = new GroupBox();
@@ -116,7 +120,7 @@ namespace XiaoYaOpt
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
-            ClientSize = new Size(640, 790);
+            ClientSize = new Size(640, 816);
             StartPosition = FormStartPosition.CenterScreen;
 
             BuildUi();
@@ -177,7 +181,7 @@ namespace XiaoYaOpt
 
             // ---- 角色設定 ----
             _grpProfile.Text = "角色設定（每個角色的技能與時間）";
-            _grpProfile.SetBounds(12, 182, 616, 330);
+            _grpProfile.SetBounds(12, 182, 616, 356);
             Controls.Add(_grpProfile);
 
             AddLabel(_grpProfile, "編輯", 12, 25);
@@ -227,50 +231,66 @@ namespace XiaoYaOpt
             _btnImport.Click += delegate { ImportFromGame(); };
             _grpProfile.Controls.AddRange(new Control[] { _cboJob, _cboSubJob, _numSubLv, _btnImport });
 
-            AddLabel(_grpProfile, "啟用", 14, 90);
-            AddLabel(_grpProfile, "按鍵", 60, 90);
-            AddLabel(_grpProfile, "技能", 130, 90);
-            AddLabel(_grpProfile, "等級", 294, 90);
-            AddLabel(_grpProfile, "技能時間(毫秒)", 346, 90);
-            AddLabel(_grpProfile, "點滑鼠", 446, 90);
-            AddLabel(_grpProfile, "延遲時間(毫秒)", 512, 90);
+            AddLabel(_grpProfile, "啟用", 12, 90);
+            AddLabel(_grpProfile, "按鍵", 52, 90);
+            AddLabel(_grpProfile, "技能", 114, 90);
+            AddLabel(_grpProfile, "等級", 284, 90);
+            AddLabel(_grpProfile, "技能時間(毫秒)", 332, 90);
+            AddLabel(_grpProfile, "點滑鼠", 420, 90);
+            AddLabel(_grpProfile, "延遲時間(毫秒)", 482, 90);
+
+            // 技能格放在可捲動的區塊裡（最多 15 格，畫面顯示約 6 格）
+            _slotPanel.SetBounds(8, 108, 600, 176);
+            _slotPanel.AutoScroll = true;
+            _grpProfile.Controls.Add(_slotPanel);
 
             KeyItem[] keys = BuildKeyList();
             foreach (var k in keys) _vkByName[k.Name] = k.Vk;
-            for (int i = 0; i < SlotCount; i++)
+            for (int i = 0; i < MaxRows; i++)
             {
-                int y = 112 + i * 29, slot = i;
+                int y = 3 + i * 29, slot = i;
                 _chkEnabled[i] = new CheckBox { Text = (i + 1).ToString() };
-                _chkEnabled[i].SetBounds(14, y, 44, 22);
+                _chkEnabled[i].SetBounds(4, y, 40, 22);
                 _cboKey[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 _cboKey[i].Items.AddRange(keys);
-                _cboKey[i].SetBounds(60, y, 64, 23);
+                _cboKey[i].SetBounds(44, y, 58, 23);
                 _cboSkill[i] = new ComboBox
                 {
                     DropDownStyle = ComboBoxStyle.DropDownList, DropDownWidth = 260, MaxDropDownItems = 16,
                     DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 20
                 };
                 _cboSkill[i].DrawItem += DrawSkillItem;
-                _cboSkill[i].SetBounds(130, y - 1, 158, 26);
+                _cboSkill[i].SetBounds(106, y - 1, 166, 26);
                 _cboSkill[i].SelectedIndexChanged += delegate { OnSkillChanged(slot); };
                 _cboLv[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-                _cboLv[i].SetBounds(294, y, 46, 23);
+                _cboLv[i].SetBounds(276, y, 44, 23);
                 _cboLv[i].SelectedIndexChanged += delegate { OnLevelChanged(slot); };
                 _numInterval[i] = MakeNumber(50, 3600000, 1000);
-                _numInterval[i].SetBounds(346, y, 94, 23);
-                _chkMouse[i] = new CheckBox { Text = "點一下" };
-                _chkMouse[i].SetBounds(446, y, 62, 22);
+                _numInterval[i].SetBounds(324, y, 84, 23);
+                _chkMouse[i] = new CheckBox { Text = "點擊" };
+                _chkMouse[i].SetBounds(412, y, 58, 22);
                 _numDelay[i] = MakeNumber(0, 60000, 200);
-                _numDelay[i].SetBounds(512, y, 94, 23);
-                _grpProfile.Controls.AddRange(new Control[] { _chkEnabled[i], _cboKey[i], _cboSkill[i], _cboLv[i], _numInterval[i], _chkMouse[i], _numDelay[i] });
+                _numDelay[i].SetBounds(474, y, 80, 23);
+                _btnDel[i] = new Button { Text = "✕", FlatStyle = FlatStyle.Flat, ForeColor = Color.Firebrick, TabStop = false };
+                _btnDel[i].FlatAppearance.BorderSize = 0;
+                _btnDel[i].SetBounds(556, y, 24, 23);
+                _btnDel[i].Click += delegate { RemoveSlot(slot); };
+                _tip.SetToolTip(_btnDel[i], "刪除這一格");
+                _slotPanel.Controls.AddRange(new Control[] { _chkEnabled[i], _cboKey[i], _cboSkill[i], _cboLv[i], _numInterval[i], _chkMouse[i], _numDelay[i], _btnDel[i] });
             }
-            _lblHint.SetBounds(12, 290, 594, 34);
+            _btnAddSlot.Text = "＋ 新增一格";
+            _btnAddSlot.SetBounds(12, 288, 100, 26);
+            _btnAddSlot.Click += delegate { AddSlot(); };
+            _lblSlotCount.SetBounds(118, 293, 300, 20);
+            _lblSlotCount.ForeColor = Color.DimGray;
+            _grpProfile.Controls.AddRange(new Control[] { _btnAddSlot, _lblSlotCount });
+            _lblHint.SetBounds(12, 318, 594, 34);
             _lblHint.ForeColor = Color.DimGray;
             _grpProfile.Controls.Add(_lblHint);
 
             // ---- 選項 ----
             _grpOptions.Text = "選項（所有視窗共用）";
-            _grpOptions.SetBounds(12, 520, 616, 200);
+            _grpOptions.SetBounds(12, 546, 616, 200);
             Controls.Add(_grpOptions);
             var modePanel = new Panel();
             modePanel.SetBounds(8, 18, 600, 50);
@@ -317,15 +337,15 @@ namespace XiaoYaOpt
 
             // ---- 下方按鈕 ----
             _btnStart.Text = "開始（Ctrl+F10）";
-            _btnStart.SetBounds(12, 732, 130, 32);
+            _btnStart.SetBounds(12, 758, 130, 32);
             _btnStart.Click += delegate { StartRun(); };
             _btnStop.Text = "停止";
-            _btnStop.SetBounds(150, 732, 80, 32);
+            _btnStop.SetBounds(150, 758, 80, 32);
             _btnStop.Click += delegate { StopRun("已停止"); };
             _btnSave.Text = "儲存設定";
-            _btnSave.SetBounds(238, 732, 90, 32);
+            _btnSave.SetBounds(238, 758, 90, 32);
             _btnSave.Click += delegate { SaveSettings(); _lblStatus.Text = "設定已儲存"; };
-            _lblStatus.SetBounds(338, 730, 290, 44);
+            _lblStatus.SetBounds(338, 756, 290, 44);
             Controls.AddRange(new Control[] { _btnStart, _btnStop, _btnSave, _lblStatus });
         }
 
@@ -458,8 +478,12 @@ namespace XiaoYaOpt
             _numSubLv.Value = Clamp(_numSubLv, p.SubJobLevel);
             _cboJob.Enabled = _cboSubJob.Enabled = _db != null;
             _numSubLv.Enabled = _db != null && !string.IsNullOrEmpty(p.SubJob);
-            for (int i = 0; i < SlotCount; i++)
+            _slotPanel.SuspendLayout();
+            for (int i = 0; i < MaxRows; i++)
             {
+                bool used = i < p.Slots.Count;
+                foreach (Control c in RowControls(i)) c.Visible = used;
+                if (!used) continue;
                 var d = p.Slots[i];
                 _chkEnabled[i].Checked = d.Enabled;
                 SelectKey(_cboKey[i], d.KeyName);
@@ -468,16 +492,48 @@ namespace XiaoYaOpt
                 _numInterval[i].BackColor = SystemColors.Window;
                 _chkMouse[i].Checked = d.Mouse;
                 _numDelay[i].Value = Clamp(_numDelay[i], d.DelayMs);
+                _btnDel[i].Enabled = p.Slots.Count > Profile.MinSlots;
             }
+            _slotPanel.ResumeLayout();
+            _btnAddSlot.Enabled = p.Slots.Count < Profile.MaxSlots;
+            _lblSlotCount.Text = string.Format("共 {0} 格（{1}～{2} 格）", p.Slots.Count, Profile.MinSlots, Profile.MaxSlots);
             _lblHint.Text = _db == null
                 ? "尚未載入技能表：按「技能表…」選擇 技能表.csv 後，就能依職業選擇技能並自動帶入時間。"
                 : "選好職業後，在「技能」欄挑選技能與等級，技能時間和延遲時間會自動帶入（仍可手動修改）。";
             _loadingEditor = false;
         }
 
+        private Control[] RowControls(int i)
+        {
+            return new Control[] { _chkEnabled[i], _cboKey[i], _cboSkill[i], _cboLv[i], _numInterval[i], _chkMouse[i], _numDelay[i], _btnDel[i] };
+        }
+
+        private void AddSlot()
+        {
+            EditorToProfile(_current);
+            var d = _current.AddSlot();
+            if (d == null) return;
+            ProfileToEditor(_current);
+            int i = _current.Slots.Count - 1;
+            _slotPanel.ScrollControlIntoView(_btnDel[i]);
+            _cboSkill[i].Focus();
+            _lblHint.Text = string.Format("已新增第 {0} 格（按鍵 {1}），請選擇技能。", i + 1, d.KeyName);
+        }
+
+        private void RemoveSlot(int i)
+        {
+            if (_current.Slots.Count <= Profile.MinSlots) return;
+            EditorToProfile(_current);
+            var d = _current.Slots[i];
+            string what = string.IsNullOrEmpty(d.SkillLabel) ? d.KeyName : d.KeyName + " " + d.SkillLabel;
+            _current.Slots.RemoveAt(i);
+            ProfileToEditor(_current);
+            _lblHint.Text = string.Format("已刪除第 {0} 格（{1}）。", i + 1, what);
+        }
+
         private void EditorToProfile(Profile p)
         {
-            for (int i = 0; i < SlotCount; i++)
+            for (int i = 0; i < p.Slots.Count; i++)
             {
                 var d = p.Slots[i];
                 d.Enabled = _chkEnabled[i].Checked;
@@ -674,7 +730,7 @@ namespace XiaoYaOpt
             ProfileToEditor(_current);
             // 副職業等級調低時，超過上限的技能等級會在下拉中降到可用的最高等級；重新計算這些格的時間。
             int lowered = 0;
-            for (int i = 0; i < SlotCount; i++)
+            for (int i = 0; i < _current.Slots.Count; i++)
             {
                 if (ChosenEntry(i) == null || !(_cboLv[i].SelectedItem is int)) continue;
                 if ((int)_cboLv[i].SelectedItem == levelsBefore[i]) continue;
@@ -870,7 +926,7 @@ namespace XiaoYaOpt
                 ProfileToEditor(_current);
                 RefreshProfileCombo(_current);
                 _lblStatus.Text = string.Format("已從 {0} 匯入到「{1}」{2}", Path.GetFileName(dlg.Selected.Path), target.Name,
-                    skipped > 0 ? string.Format("（{0} 個超過 {1} 格未匯入）", skipped, SlotCount) : "");
+                    skipped > 0 ? string.Format("（{0} 個超過 {1} 格未匯入）", skipped, Profile.MaxSlots) : "");
                 SaveSettings();
             }
         }
@@ -975,8 +1031,8 @@ namespace XiaoYaOpt
 
         private SlotConfig[] ToSlotConfigs(Profile p)
         {
-            var result = new SlotConfig[SlotCount];
-            for (int i = 0; i < SlotCount; i++)
+            var result = new SlotConfig[p.Slots.Count];
+            for (int i = 0; i < p.Slots.Count; i++)
             {
                 var d = p.Slots[i];
                 int vk;
@@ -1113,7 +1169,7 @@ namespace XiaoYaOpt
             if (s.Get("slot1.key", null) == null) return;
             var def = _store.Find(ProfileStore.DefaultName);
             if (s.GetBool("migrated", false)) return;
-            for (int i = 0; i < SlotCount; i++)
+            for (int i = 0; i < Math.Min(6, def.Slots.Count); i++) // 舊版固定 6 格
             {
                 string n = "slot" + (i + 1) + ".";
                 var d = def.Slots[i];

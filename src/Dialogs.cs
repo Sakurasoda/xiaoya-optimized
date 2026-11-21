@@ -201,9 +201,8 @@ namespace XiaoYaOpt
             var mf = (MacroFile)_lstFiles.SelectedItems[0].Tag;
             var temp = new Profile("preview");
             int skipped = GameShortcuts.ApplyTo(temp, mf, _db);
-            for (int i = 0; i < Profile.SlotCount; i++)
+            foreach (var d in temp.Slots)
             {
-                var d = temp.Slots[i];
                 if (string.IsNullOrEmpty(d.SkillName) && string.IsNullOrEmpty(d.SkillLabel)) continue;
                 SkillInfo info = _db != null && !string.IsNullOrEmpty(d.SkillName) ? _db.Find(d.SkillName, d.SkillLevel) : null;
                 string times = info == null ? "" : string.Format("{0} / {1} / {2}", Fmt(info.CastSec), Fmt(info.CooldownSec), Fmt(info.DurationSec));
@@ -214,7 +213,7 @@ namespace XiaoYaOpt
                 }));
             }
             _lblHint.Text = skipped > 0
-                ? string.Format("快捷列有 {0} 個項目超過 {1} 格，只會匯入前 {1} 個。", skipped, Profile.SlotCount)
+                ? string.Format("快捷列有 {0} 個項目超過 {1} 格，只會匯入前 {1} 個。", skipped, Profile.MaxSlots)
                 : (_db == null ? _lblHint.Text : "");
             if (_txtNewName.Text.Length == 0) _txtNewName.Text = SuggestName(mf);
         }

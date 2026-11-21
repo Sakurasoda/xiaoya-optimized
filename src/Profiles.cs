@@ -24,7 +24,9 @@ namespace XiaoYaOpt
 
     internal sealed class Profile
     {
-        public const int SlotCount = 6;
+        public const int DefaultSlots = 6;
+        public const int MinSlots = 1;
+        public const int MaxSlots = 15;
         public string Name;
         /// <summary>職業代號（官網網址代號，例如 blacksmith）；空字串表示全部職業。</summary>
         public string Job = "";
@@ -32,19 +34,36 @@ namespace XiaoYaOpt
         public string SubJob = "";
         /// <summary>副職業等級；0 表示不限（列出體系內全部可學的技能與等級）。</summary>
         public int SubJobLevel;
-        public SlotData[] Slots = new SlotData[SlotCount];
+        /// <summary>技能格（1～15 格，可自行增減）。</summary>
+        public List<SlotData> Slots = new List<SlotData>();
 
-        public Profile(string name)
+        public Profile(string name) : this(name, DefaultSlots) { }
+
+        public Profile(string name, int slotCount)
         {
             Name = name;
-            for (int i = 0; i < SlotCount; i++) Slots[i] = new SlotData { KeyName = "F" + (i + 1) };
+            for (int i = 0; i < slotCount; i++) Slots.Add(new SlotData { KeyName = "F" + (i + 1) });
         }
 
         public Profile Clone(string newName)
         {
-            var p = new Profile(newName) { Job = Job, SubJob = SubJob, SubJobLevel = SubJobLevel };
-            for (int i = 0; i < SlotCount; i++) p.Slots[i] = Slots[i].Clone();
+            var p = new Profile(newName, 0) { Job = Job, SubJob = SubJob, SubJobLevel = SubJobLevel };
+            foreach (var d in Slots) p.Slots.Add(d.Clone());
             return p;
+        }
+
+        /// <summary>新增一格；按鍵預設為還沒用到的第一個 F 鍵。超過上限時回傳 null。</summary>
+        public SlotData AddSlot()
+        {
+            if (Slots.Count >= MaxSlots) return null;
+            var used = new HashSet<string>(Slots.Select(s => s.KeyName), StringComparer.OrdinalIgnoreCase);
+            // 依序找還沒用過的鍵：F1～F12，用完再用數字鍵 1～9、0
+            var order = Enumerable.Range(1, 12).Select(f => "F" + f)
+                .Concat(new[] { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" });
+            string key = order.FirstOrDefault(k => !used.Contains(k)) ?? "F1";
+            var d = new SlotData { KeyName = key };
+            Slots.Add(d);
+            return d;
         }
     }
 
@@ -82,10 +101,14 @@ namespace XiaoYaOpt
                     if (p.SubJob.Length > 0 && !int.TryParse(p.SubJob, out sysId))
                         p.SubJob = Jobs.SystemOfJob(p.SubJob); // 舊版存的是單一職業代號，轉成所屬體系
                     p.SubJobLevel = s.GetInt("subJobLevel", 0);
-                    for (int i = 0; i < Profile.SlotCount; i++)
+                    // 舊版沒有 slotCount，固定 6 格
+                    int count = Math.Max(Profile.MinSlots, Math.Min(Profile.MaxSlots, s.GetInt("slotCount", Profile.DefaultSlots)));
+                    p.Slots.Clear();
+                    for (int i = 0; i < count; i++)
                     {
                         string n = "slot" + (i + 1) + ".";
-                        var d = p.Slots[i];
+                        var d = new SlotData();
+                        p.Slots.Add(d);
                         d.Enabled = s.GetBool(n + "enabled", false);
                         d.KeyName = s.Get(n + "key", "F" + (i + 1));
                         d.IntervalMs = s.GetInt(n + "interval", 1000);
@@ -104,12 +127,13 @@ namespace XiaoYaOpt
         public void Save(Profile p)
         {
             Directory.CreateDirectory(_dir);
-            var s = new Settings(FileFor(p.Name));
+            var s = new Settings(FileFor(p.Name), false); // 整份重寫，刪掉的格子才不會殘留
             s.Set("name", p.Name);
             s.Set("job", p.Job ?? "");
             s.Set("subJob", p.SubJob ?? "");
             s.Set("subJobLevel", p.SubJobLevel);
-            for (int i = 0; i < Profile.SlotCount; i++)
+            s.Set("slotCount", p.Slots.Count);
+            for (int i = 0; i < p.Slots.Count; i++)
             {
                 string n = "slot" + (i + 1) + ".";
                 var d = p.Slots[i];
