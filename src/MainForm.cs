@@ -168,9 +168,9 @@ namespace XiaoYaOpt
             clickPanel.Controls.AddRange(new Control[] { lblX, _numX, lblY, _numY, _btnCapture });
             _grpOptions.Controls.Add(clickPanel);
 
-            _chkCtrlT.Text = "開始時送出 Ctrl+T（同原版）";
-            _chkCtrlT.SetBounds(14, 164, 230, 22);
-            AddLabel(_grpOptions, "多開時每個視窗錯開 (毫秒)", 260, 167);
+            _chkCtrlT.Text = "執行時切到拍照模式（Ctrl+T 隱藏 UI）";
+            _chkCtrlT.SetBounds(14, 164, 240, 22);
+            AddLabel(_grpOptions, "多開時每個視窗錯開 (毫秒)", 262, 167);
             _numStagger.Maximum = 10000;
             _numStagger.SetBounds(436, 164, 80, 23);
             _grpOptions.Controls.AddRange(new Control[] { _cboButton, _chkCtrlT, _numStagger });

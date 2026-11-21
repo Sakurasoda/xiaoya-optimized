@@ -36,7 +36,7 @@ namespace XiaoYaOpt
         public int ClickX;
         public int ClickY;
         public int StaggerMs;
-        /// <summary>開始時對每個視窗送一次 Ctrl+T（同原版）。</summary>
+        /// <summary>ECO 的 Ctrl+T 是切換拍照模式（隱藏 UI）。開始時送一次進入、停止時再送一次離開（同原版）。</summary>
         public bool SendCtrlT;
     }
 
@@ -68,6 +68,8 @@ namespace XiaoYaOpt
         private readonly List<IntPtr> _windows;
         private readonly List<Job> _jobs = new List<Job>();
         private readonly Dictionary<IntPtr, long> _busyUntil = new Dictionary<IntPtr, long>();
+        /// <summary>已送過 Ctrl+T、目前處於拍照模式的視窗；停止時要再送一次切回來。</summary>
+        private readonly List<IntPtr> _photoMode = new List<IntPtr>();
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
         private readonly Stopwatch _clock = new Stopwatch();
         private Thread _thread;
@@ -112,7 +114,8 @@ namespace XiaoYaOpt
             _wake.Set();
             if (_thread != null && Thread.CurrentThread != _thread)
             {
-                _thread.Join(2000);
+                // 停止時要對每個視窗補送 Ctrl+T（每個約 150ms），多留一點時間。
+                _thread.Join(2000 + 200 * _windows.Count);
             }
         }
 
@@ -120,10 +123,13 @@ namespace XiaoYaOpt
         {
             if (_cfg.SendCtrlT)
             {
+                // 進入拍照模式（隱藏遊戲 UI），之後點視窗中央才不會點到介面。
                 foreach (IntPtr hwnd in _windows)
                 {
-                    if (_stop) return;
-                    if (Native.IsWindow(hwnd)) SendCtrlT(hwnd);
+                    if (_stop) break;
+                    if (!Native.IsWindow(hwnd)) continue;
+                    SendCtrlT(hwnd);
+                    _photoMode.Add(hwnd);
                 }
             }
             _clock.Restart();
@@ -169,6 +175,13 @@ namespace XiaoYaOpt
             }
             _jobs.Clear();
 
+            // 離開拍照模式，把遊戲 UI 恢復（同原版停止時再送一次 Ctrl+T）。
+            foreach (IntPtr hwnd in _photoMode)
+            {
+                if (Native.IsWindow(hwnd)) SendCtrlT(hwnd);
+            }
+            _photoMode.Clear();
+
             if (finishedNaturally)
             {
                 var handler = Finished;
@@ -182,6 +195,7 @@ namespace XiaoYaOpt
             {
                 _jobs.RemoveAll(j => j.Hwnd == job.Hwnd);
                 _busyUntil.Remove(job.Hwnd);
+                _photoMode.Remove(job.Hwnd);
                 var lost = WindowLost;
                 if (lost != null) lost(job.Hwnd);
                 return;
