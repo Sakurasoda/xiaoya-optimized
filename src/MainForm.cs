@@ -47,6 +47,7 @@ namespace XiaoYaOpt
         private readonly ComboBox _cboSubJob = new ComboBox();
         private readonly NumericUpDown _numSubLv = new NumericUpDown();
         private DualJobDb _dj;
+        private SkillIcons _icons;
         private readonly ToolTip _tip = new ToolTip();
 
         /// <summary>技能下拉的項目：主職業技能直接顯示名稱，副職業技能前面加「［副］」。</summary>
@@ -244,8 +245,13 @@ namespace XiaoYaOpt
                 _cboKey[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 _cboKey[i].Items.AddRange(keys);
                 _cboKey[i].SetBounds(60, y, 64, 23);
-                _cboSkill[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, DropDownWidth = 240, MaxDropDownItems = 20 };
-                _cboSkill[i].SetBounds(130, y, 158, 23);
+                _cboSkill[i] = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList, DropDownWidth = 260, MaxDropDownItems = 16,
+                    DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 20
+                };
+                _cboSkill[i].DrawItem += DrawSkillItem;
+                _cboSkill[i].SetBounds(130, y - 1, 158, 26);
                 _cboSkill[i].SelectedIndexChanged += delegate { OnSkillChanged(slot); };
                 _cboLv[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 _cboLv[i].SetBounds(294, y, 46, 23);
@@ -687,6 +693,40 @@ namespace XiaoYaOpt
                 + (lowered > 0 ? string.Format("{0} 格技能等級超過副職業上限，已降級並重算時間。", lowered) : "");
         }
 
+        /// <summary>從遊戲資料夾載入技能圖示（只載入索引，圖示用到時才解碼）。</summary>
+        private void LoadIcons()
+        {
+            if (_icons != null || !DualJobDb.LooksLikeGameDir(_gameDir)) return;
+            try { _icons = SkillIcons.Load(_gameDir); }
+            catch (Exception) { _icons = null; }
+            if (_icons != null) foreach (var c in _cboSkill) c.Invalidate();
+        }
+
+        /// <summary>技能下拉：左邊畫技能圖示，右邊是名稱。</summary>
+        private void DrawSkillItem(object sender, DrawItemEventArgs e)
+        {
+            e.DrawBackground();
+            if (e.Index < 0) return;
+            var combo = (ComboBox)sender;
+            object item = combo.Items[e.Index];
+            var choice = item as SkillChoice;
+            int x = e.Bounds.Left + 2;
+            Image icon = choice != null && _icons != null ? _icons.Get(choice.Entry.Id) : null;
+            if (icon != null)
+            {
+                e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                int size = Math.Min(18, e.Bounds.Height - 2);
+                e.Graphics.DrawImage(icon, new Rectangle(x, e.Bounds.Top + (e.Bounds.Height - size) / 2, size, size));
+            }
+            x += 22;
+            bool selected = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
+            Color fore = selected ? SystemColors.HighlightText : (choice == null ? Color.DimGray : SystemColors.ControlText);
+            TextRenderer.DrawText(e.Graphics, item.ToString(), e.Font,
+                new Rectangle(x, e.Bounds.Top, e.Bounds.Right - x, e.Bounds.Height), fore,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            e.DrawFocusRectangle();
+        }
+
         /// <summary>從正在執行的遊戲程序（視窗清單裡的視窗、或名為 eco 的程序）找出遊戲資料夾。</summary>
         private string DetectGameDir()
         {
@@ -741,6 +781,7 @@ namespace XiaoYaOpt
                     if (_current != null) SaveSettings();
                 }
             }
+            LoadIcons();
             try
             {
                 _dj = DualJobDb.Load(_gameDir);
@@ -1152,6 +1193,7 @@ namespace XiaoYaOpt
         {
             StopRun("");
             SaveSettings();
+            if (_icons != null) _icons.Dispose();
             Native.UnregisterHotKey(Handle, HotkeyId);
             base.OnFormClosing(e);
         }

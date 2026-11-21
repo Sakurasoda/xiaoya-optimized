@@ -141,7 +141,7 @@ namespace XiaoYaOpt
                     db.Add(row[cOrig], lv, info);
 
                     // 依技能 ID 索引（副職業表用 ID 對應）
-                    uint id;
+                    uint id = 0;
                     if (cId >= 0 && uint.TryParse(row[cId], out id))
                     {
                         SkillEntry byId;
@@ -169,7 +169,7 @@ namespace XiaoYaOpt
                         string nk = NameKey(row[cWikiEn]);
                         SkillEntry e;
                         if (!map.TryGetValue(nk, out e))
-                            map[nk] = e = new SkillEntry { EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type };
+                            map[nk] = e = new SkillEntry { Id = id, EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type };
                         if (!e.Levels.ContainsKey(lv)) e.Levels[lv] = info;
                     }
                 }

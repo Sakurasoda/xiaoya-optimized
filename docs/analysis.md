@@ -122,7 +122,13 @@ if 是否點滑鼠 == 1:
 
 C# 移植在 `src/EcoArchive.cs`；`table.hed` 184 筆全部可解（解出大小與 `.hed` 記錄一致）。
 
-### 6.3 副職業表
+### 6.3 技能圖示
+
+- `data\sprite\skillicon\skillicon.hed/dat`：同樣的封包格式，1,257 筆；技能圖示檔名為 `SI_<技能ID 4 位數>.TGA`（另有 `EM_*` 表情圖示）。
+- 檔案不是標準 TGA：24 bytes 檔頭 = `u32 格式`（0 = 16 位元 ARGB1555，2 = 32 位元 BGRA）、`u16 寬`、`u16 高`、…、`u32 像素資料大小`（位移 20）；之後是由上到下的像素，技能圖示為 32×32。
+- 解碼在 `src/EcoImage.cs`，小雅執行時從遊戲資料夾讀取並快取（`src/SkillIcons.cs`）。
+
+### 6.4 副職業表
 
 - `dualjob_info.csv`：12 個副職業**體系**（1 劍士系 … 9 礦工系 … 12 商人系），各含 4 個職業 ID。
 - `dualjob_skill_learn.csv`：`體系ID, 技能ID, 技能名, 所屬職業ID, Lv1..Lv10 需要的副職業等級`（0 = 該等級學不到），共 933 列。
