@@ -12,10 +12,13 @@ namespace XiaoYaOpt
         private readonly Dictionary<string, string> _values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly string _path;
 
-        public Settings(string path)
+        public Settings(string path) : this(path, true) { }
+
+        /// <param name="load">false：不讀舊檔，Save 時整份重寫（用來移除不再需要的鍵）。</param>
+        public Settings(string path, bool load)
         {
             _path = path;
-            if (!File.Exists(path)) return;
+            if (!load || !File.Exists(path)) return;
             foreach (string raw in File.ReadAllLines(path, Encoding.UTF8))
             {
                 string line = raw.Trim();
@@ -25,6 +28,8 @@ namespace XiaoYaOpt
                 _values[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
             }
         }
+
+        public IEnumerable<string> Keys() { return new List<string>(_values.Keys); }
 
         public string Get(string key, string fallback)
         {

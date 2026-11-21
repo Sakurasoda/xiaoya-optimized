@@ -28,7 +28,6 @@ namespace XiaoYaOpt
 
     internal sealed class RunConfig
     {
-        public SlotConfig[] Slots;
         public SendMode Mode;
         public bool RightButton;
         /// <summary>true：點擊視窗正中央（同原版）；false：使用 ClickX/ClickY。</summary>
@@ -66,6 +65,8 @@ namespace XiaoYaOpt
 
         private readonly RunConfig _cfg;
         private readonly List<IntPtr> _windows;
+        /// <summary>每個視窗各自的技能設定（來自各自的角色設定）。</summary>
+        private readonly Dictionary<IntPtr, SlotConfig[]> _slots;
         private readonly List<Job> _jobs = new List<Job>();
         private readonly Dictionary<IntPtr, long> _busyUntil = new Dictionary<IntPtr, long>();
         /// <summary>已送過 Ctrl+T、目前處於拍照模式的視窗；停止時要再送一次切回來。</summary>
@@ -83,10 +84,18 @@ namespace XiaoYaOpt
         /// <summary>所有視窗都關閉、排程自行結束時觸發（在排程執行緒上呼叫）。</summary>
         public event Action Finished;
 
-        public Scheduler(RunConfig cfg, IEnumerable<IntPtr> windows)
+        /// <param name="windows">視窗與它的技能設定；順序決定多開時的錯開順序。</param>
+        public Scheduler(RunConfig cfg, IList<KeyValuePair<IntPtr, SlotConfig[]>> windows)
         {
             _cfg = cfg;
-            _windows = new List<IntPtr>(windows);
+            _windows = new List<IntPtr>();
+            _slots = new Dictionary<IntPtr, SlotConfig[]>();
+            foreach (var kv in windows)
+            {
+                if (_slots.ContainsKey(kv.Key)) continue;
+                _windows.Add(kv.Key);
+                _slots[kv.Key] = kv.Value;
+            }
         }
 
         public long SentCount { get { return Interlocked.Read(ref _sent); } }
@@ -97,9 +106,10 @@ namespace XiaoYaOpt
             for (int w = 0; w < _windows.Count; w++)
             {
                 _busyUntil[_windows[w]] = 0;
-                for (int s = 0; s < _cfg.Slots.Length; s++)
+                SlotConfig[] slots = _slots[_windows[w]];
+                for (int s = 0; s < slots.Length; s++)
                 {
-                    if (!_cfg.Slots[s].Enabled) continue;
+                    if (!slots[s].Enabled) continue;
                     // 每個視窗錯開一點時間，避免同一瞬間全部擠在一起送出。
                     Add((long)w * _cfg.StaggerMs, _windows[w], s, JobKind.KeyDown);
                 }
@@ -169,7 +179,7 @@ namespace XiaoYaOpt
                 if (pending.Kind != JobKind.KeyUp && pending.Kind != JobKind.MouseUp) continue;
                 if (!Native.IsWindow(pending.Hwnd)) continue;
                 if (pending.Kind == JobKind.KeyUp)
-                    SendKeyMessage(pending.Hwnd, _cfg.Slots[pending.Slot].VirtualKey, true);
+                    SendKeyMessage(pending.Hwnd, _slots[pending.Hwnd][pending.Slot].VirtualKey, true);
                 else
                     PostMouse(pending.Hwnd, true);
             }
@@ -201,7 +211,7 @@ namespace XiaoYaOpt
                 return;
             }
 
-            SlotConfig slot = _cfg.Slots[job.Slot];
+            SlotConfig slot = _slots[job.Hwnd][job.Slot];
             switch (job.Kind)
             {
                 case JobKind.KeyDown:
