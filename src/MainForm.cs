@@ -44,6 +44,16 @@ namespace XiaoYaOpt
         private readonly Button _btnRename = new Button();
         private readonly Button _btnDelete = new Button();
         private readonly ComboBox _cboJob = new ComboBox();
+        private readonly ComboBox _cboSubJob = new ComboBox();
+        private readonly ToolTip _tip = new ToolTip();
+
+        /// <summary>技能下拉的項目：主職業技能直接顯示名稱，副職業技能前面加「［副］」。</summary>
+        private sealed class SkillChoice
+        {
+            public SkillEntry Entry;
+            public bool Sub;
+            public override string ToString() { return (Sub ? "［副］" : "") + Entry.Display; }
+        }
         private readonly Button _btnImport = new Button();
         private readonly Button _btnDb = new Button();
         private readonly Label _lblDb = new Label();
@@ -183,22 +193,29 @@ namespace XiaoYaOpt
             _btnDelete.Click += delegate { DeleteProfile(); };
             _grpProfile.Controls.AddRange(new Control[] { _cboProfile, _btnNew, _btnCopy, _btnRename, _btnDelete });
 
+            _btnDb.Text = "技能表…";
+            _btnDb.SetBounds(538, 20, 70, 27);
+            _btnDb.Click += delegate { ChooseSkillDb(); };
+            _grpProfile.Controls.Add(_btnDb);
+
             AddLabel(_grpProfile, "職業", 12, 59);
             _cboJob.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cboJob.SetBounds(50, 56, 234, 23);
+            _cboJob.SetBounds(50, 56, 180, 23);
+            _cboJob.DropDownWidth = 220;
             _cboJob.MaxDropDownItems = 20;
             foreach (var j in Jobs.All()) _cboJob.Items.Add(j);
             _cboJob.SelectedIndexChanged += OnJobChanged;
-            _btnImport.Text = "從遊戲匯入快捷列…";
-            _btnImport.SetBounds(292, 54, 140, 27);
+            AddLabel(_grpProfile, "副職業", 238, 59);
+            _cboSubJob.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cboSubJob.SetBounds(288, 56, 180, 23);
+            _cboSubJob.DropDownWidth = 220;
+            _cboSubJob.MaxDropDownItems = 20;
+            foreach (var j in Jobs.SubJobChoices()) _cboSubJob.Items.Add(j);
+            _cboSubJob.SelectedIndexChanged += OnJobChanged;
+            _btnImport.Text = "從遊戲匯入…";
+            _btnImport.SetBounds(476, 54, 132, 27);
             _btnImport.Click += delegate { ImportFromGame(); };
-            _btnDb.Text = "技能表…";
-            _btnDb.SetBounds(436, 54, 66, 27);
-            _btnDb.Click += delegate { ChooseSkillDb(); };
-            _lblDb.SetBounds(506, 59, 104, 20);
-            _lblDb.AutoEllipsis = true;
-            _lblDb.ForeColor = Color.DimGray;
-            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _btnImport, _btnDb, _lblDb });
+            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _cboSubJob, _btnImport });
 
             AddLabel(_grpProfile, "啟用", 14, 90);
             AddLabel(_grpProfile, "按鍵", 60, 90);
@@ -421,14 +438,15 @@ namespace XiaoYaOpt
         private void ProfileToEditor(Profile p)
         {
             _loadingEditor = true;
-            SelectJob(p.Job);
-            _cboJob.Enabled = _db != null;
+            SelectJob(_cboJob, p.Job);
+            SelectJob(_cboSubJob, p.SubJob);
+            _cboJob.Enabled = _cboSubJob.Enabled = _db != null;
             for (int i = 0; i < SlotCount; i++)
             {
                 var d = p.Slots[i];
                 _chkEnabled[i].Checked = d.Enabled;
                 SelectKey(_cboKey[i], d.KeyName);
-                PopulateSkillCombo(i, p.Job, d);
+                PopulateSkillCombo(i, p, d);
                 _numInterval[i].Value = Clamp(_numInterval[i], d.IntervalMs);
                 _numInterval[i].BackColor = SystemColors.Window;
                 _chkMouse[i].Checked = d.Mouse;
@@ -450,7 +468,7 @@ namespace XiaoYaOpt
                 d.IntervalMs = (int)_numInterval[i].Value;
                 d.Mouse = _chkMouse[i].Checked;
                 d.DelayMs = (int)_numDelay[i].Value;
-                var entry = _cboSkill[i].SelectedItem as SkillEntry;
+                var entry = ChosenEntry(i);
                 if (entry == null)
                 {
                     d.SkillName = ""; d.SkillLevel = 0; d.SkillLabel = "";
@@ -463,43 +481,57 @@ namespace XiaoYaOpt
             }
         }
 
-        private void SelectJob(string slug)
+        private static void SelectJob(ComboBox combo, string slug)
         {
-            foreach (JobInfo j in _cboJob.Items)
-                if (j.Slug == (slug ?? "")) { _cboJob.SelectedItem = j; return; }
-            _cboJob.SelectedIndex = 0;
+            foreach (JobInfo j in combo.Items)
+                if (j.Slug == (slug ?? "")) { combo.SelectedItem = j; return; }
+            combo.SelectedIndex = 0;
         }
 
-        /// <summary>技能下拉：「手動設定」＋該職業的技能。角色設定裡已有、但不屬於這個職業的技能也會保留在清單中。</summary>
-        private void PopulateSkillCombo(int i, string job, SlotData d)
+        private SkillEntry ChosenEntry(int i)
+        {
+            var c = _cboSkill[i].SelectedItem as SkillChoice;
+            return c != null ? c.Entry : null;
+        }
+
+        /// <summary>主職業與副職業可選的技能（主職業在前；兩邊都有的技能只列一次，算主職業）。</summary>
+        private List<SkillChoice> ChoicesFor(Profile p)
+        {
+            var list = new List<SkillChoice>();
+            if (_db == null) return list;
+            var seen = new HashSet<string>();
+            foreach (var e in _db.SkillsOf(p.Job))
+                if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e });
+            if (!string.IsNullOrEmpty(p.SubJob) && p.Job.Length > 0)
+                foreach (var e in _db.SkillsOf(p.SubJob))
+                    if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e, Sub = true });
+            return list;
+        }
+
+        /// <summary>技能下拉：「手動設定」＋主／副職業的技能。角色設定裡已有、但不在清單中的技能也會保留。</summary>
+        private void PopulateSkillCombo(int i, Profile p, SlotData d)
         {
             var combo = _cboSkill[i];
             combo.BeginUpdate();
             combo.Items.Clear();
             combo.Items.Add(ManualItem);
-            SkillEntry selected = null;
-            if (_db != null)
+            SkillChoice selected = null;
+            foreach (var c in ChoicesFor(p))
             {
-                foreach (var e in _db.SkillsOf(job)) combo.Items.Add(e);
-                if (!string.IsNullOrEmpty(d.SkillName))
-                {
-                    selected = combo.Items.OfType<SkillEntry>().FirstOrDefault(e => SameSkill(e.EnName, d.SkillName));
-                    if (selected == null)
-                    {
-                        selected = _db.SkillsOf(Jobs.AllSlug).FirstOrDefault(e => SameSkill(e.EnName, d.SkillName));
-                        if (selected != null) combo.Items.Insert(1, selected);
-                    }
-                }
+                combo.Items.Add(c);
+                if (selected == null && !string.IsNullOrEmpty(d.SkillName) && SameSkill(c.Entry.EnName, d.SkillName)) selected = c;
             }
             if (selected == null && !string.IsNullOrEmpty(d.SkillName))
             {
+                SkillEntry other = _db != null ? _db.SkillsOf(Jobs.AllSlug).FirstOrDefault(e => SameSkill(e.EnName, d.SkillName)) : null;
                 // 技能表沒有這個技能（或未載入技能表）：保留成一個只有名稱的項目，避免資料遺失。
-                selected = new SkillEntry { EnName = d.SkillName, ZhName = d.SkillLabel.Length > 0 ? d.SkillLabel : d.SkillName };
+                if (other == null) other = new SkillEntry { EnName = d.SkillName, ZhName = d.SkillLabel.Length > 0 ? d.SkillLabel : d.SkillName };
+                selected = new SkillChoice { Entry = other };
                 combo.Items.Insert(1, selected);
             }
             combo.SelectedItem = selected != null ? (object)selected : ManualItem;
             combo.EndUpdate();
-            PopulateLevelCombo(i, selected, d.SkillLevel);
+            PopulateLevelCombo(i, selected != null ? selected.Entry : null, d.SkillLevel);
         }
 
         private void PopulateLevelCombo(int i, SkillEntry entry, int level)
@@ -529,7 +561,7 @@ namespace XiaoYaOpt
         {
             if (_loadingEditor) return;
             _loadingEditor = true;
-            var entry = _cboSkill[i].SelectedItem as SkillEntry;
+            var entry = ChosenEntry(i);
             PopulateLevelCombo(i, entry, entry != null ? entry.MaxLevel : 0);
             _loadingEditor = false;
             if (entry == null)
@@ -550,7 +582,7 @@ namespace XiaoYaOpt
         /// <summary>依選到的技能與等級，自動帶入技能時間與延遲時間。</summary>
         private void ApplyChosenSkill(int i)
         {
-            var entry = _cboSkill[i].SelectedItem as SkillEntry;
+            var entry = ChosenEntry(i);
             if (entry == null || !(_cboLv[i].SelectedItem is int)) return;
             int lv = (int)_cboLv[i].SelectedItem;
             var temp = new SlotData { SkillName = entry.EnName, SkillLevel = lv, IntervalMs = (int)_numInterval[i].Value, DelayMs = (int)_numDelay[i].Value };
@@ -579,12 +611,15 @@ namespace XiaoYaOpt
             if (_loadingEditor || _current == null) return;
             EditorToProfile(_current);
             var job = (JobInfo)_cboJob.SelectedItem;
+            var sub = (JobInfo)_cboSubJob.SelectedItem;
             _current.Job = job.Slug;
-            // 不屬於新職業的技能清掉並停用，避免誤送。
+            _current.SubJob = sub != null && sub.Slug != job.Slug ? sub.Slug : "";
+            // 不屬於主職業或副職業的技能清掉並停用，避免誤送。
+            var choices = ChoicesFor(_current);
             int cleared = 0;
             if (_db != null)
             {
-                var names = new HashSet<string>(_db.SkillsOf(job.Slug).Select(x => Normalize(x.EnName)));
+                var names = new HashSet<string>(choices.Select(x => Normalize(x.Entry.EnName)));
                 foreach (var d in _current.Slots)
                 {
                     if (string.IsNullOrEmpty(d.SkillName) || names.Contains(Normalize(d.SkillName))) continue;
@@ -593,9 +628,13 @@ namespace XiaoYaOpt
                 }
             }
             ProfileToEditor(_current);
-            int count = _db != null ? _db.SkillsOf(job.Slug).Count : 0;
-            _lblHint.Text = string.Format("{0}：可選 {1} 個技能。{2}", job.Display, count,
-                cleared > 0 ? string.Format("有 {0} 格原本的技能不屬於這個職業，已清除並停用。", cleared) : "");
+            int mainCount = choices.Count(c => !c.Sub), subCount = choices.Count(c => c.Sub);
+            string what = _current.SubJob.Length > 0
+                ? string.Format("{0}＋副職業 {1}：可選 {2} 個技能（主 {3}、副 {4}，副職業技能標示［副］）",
+                    job.Display, ((JobInfo)_cboSubJob.SelectedItem).Display, choices.Count, mainCount, subCount)
+                : string.Format("{0}：可選 {1} 個技能", job.Display, mainCount);
+            if (job.Slug.Length == 0 && sub != null && sub.Slug.Length > 0) what += "（主職業是「全部職業」時不另外列副職業）";
+            _lblHint.Text = what + "。" + (cleared > 0 ? string.Format("有 {0} 格原本的技能不屬於這些職業，已清除並停用。", cleared) : "");
         }
 
         private void NewProfile(bool copy)
@@ -661,7 +700,12 @@ namespace XiaoYaOpt
                 else target = _current;
                 int skipped = GameShortcuts.ApplyTo(target, dlg.Selected, _db);
                 if (_db != null)
-                    target.Job = _db.GuessJob(dlg.Selected.Shortcuts.Where(s => s.SkillName != null).Select(s => s.SkillName));
+                {
+                    string main, sub;
+                    _db.GuessJobs(dlg.Selected.Shortcuts.Where(s => s.SkillName != null).Select(s => s.SkillName), out main, out sub);
+                    target.Job = main;
+                    target.SubJob = sub;
+                }
                 _store.Save(target);
                 _current = target;
                 ProfileToEditor(_current);
@@ -713,6 +757,7 @@ namespace XiaoYaOpt
                 _db = SkillDb.Load(path);
                 _skillDbPath = path;
                 _lblDb.Text = "技能表：" + Path.GetFileName(path) + "（" + _db.Count + " 筆）";
+                _tip.SetToolTip(_btnDb, "目前的技能表：" + path + "（" + _db.Count + " 筆）");
             }
             catch (Exception ex)
             {

@@ -74,6 +74,14 @@ namespace XiaoYaOpt
             { "joker",           "小丑 Joker" },
         };
 
+        /// <summary>副職業選單用：「（無）」＋所有職業（不含「全部職業」）。</summary>
+        public static List<JobInfo> SubJobChoices()
+        {
+            var list = new List<JobInfo> { new JobInfo { Slug = "", Display = "（無）" } };
+            foreach (var j in All()) if (j.Slug.Length > 0) list.Add(j);
+            return list;
+        }
+
         public static List<JobInfo> All()
         {
             var list = new List<JobInfo>();

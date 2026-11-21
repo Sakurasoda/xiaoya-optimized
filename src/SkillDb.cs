@@ -58,12 +58,31 @@ namespace XiaoYaOpt
         /// <summary>找出包含最多指定技能的職業（用於匯入時自動判斷職業）。</summary>
         public string GuessJob(IEnumerable<string> enNames)
         {
+            string main, sub;
+            GuessJobs(enNames, out main, out sub);
+            return main;
+        }
+
+        /// <summary>
+        /// 依技能判斷主職業與副職業：主職業 = 涵蓋最多技能的職業；
+        /// 副職業 = 涵蓋剩下技能最多的職業（剩下的技能都已涵蓋時為空字串）。
+        /// </summary>
+        public void GuessJobs(IEnumerable<string> enNames, out string main, out string sub)
+        {
             var wanted = new HashSet<string>();
             foreach (string n in enNames) { string k = NameKey(n); if (k != null) wanted.Add(k); }
+            main = BestJob(wanted, null);
+            var rest = new HashSet<string>(wanted);
+            if (main.Length > 0) foreach (var e in _byJob[main]) rest.Remove(NameKey(e.EnName));
+            sub = rest.Count > 0 ? BestJob(rest, main) : "";
+        }
+
+        private string BestJob(HashSet<string> wanted, string exclude)
+        {
             string best = ""; int bestCount = 0;
             foreach (var kv in _byJob)
             {
-                if (kv.Key.Length == 0) continue;
+                if (kv.Key.Length == 0 || kv.Key == exclude) continue;
                 int c = 0;
                 foreach (var e in kv.Value) if (wanted.Contains(NameKey(e.EnName))) c++;
                 if (c > bestCount) { bestCount = c; best = kv.Key; }
