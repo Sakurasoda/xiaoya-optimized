@@ -43,13 +43,16 @@ namespace XiaoYaOpt
         private readonly Button _btnCopy = new Button();
         private readonly Button _btnRename = new Button();
         private readonly Button _btnDelete = new Button();
+        private readonly ComboBox _cboJob = new ComboBox();
         private readonly Button _btnImport = new Button();
-        private readonly Button _btnRecalc = new Button();
         private readonly Button _btnDb = new Button();
         private readonly Label _lblDb = new Label();
+        private readonly Label _lblHint = new Label();
         private readonly CheckBox[] _chkEnabled = new CheckBox[SlotCount];
         private readonly ComboBox[] _cboKey = new ComboBox[SlotCount];
-        private readonly Label[] _lblSkill = new Label[SlotCount];
+        private readonly ComboBox[] _cboSkill = new ComboBox[SlotCount];
+        private readonly ComboBox[] _cboLv = new ComboBox[SlotCount];
+        private const string ManualItem = "（手動設定）";
         private readonly NumericUpDown[] _numInterval = new NumericUpDown[SlotCount];
         private readonly CheckBox[] _chkMouse = new CheckBox[SlotCount];
         private readonly NumericUpDown[] _numDelay = new NumericUpDown[SlotCount];
@@ -98,7 +101,7 @@ namespace XiaoYaOpt
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
-            ClientSize = new Size(640, 760);
+            ClientSize = new Size(640, 790);
             StartPosition = FormStartPosition.CenterScreen;
 
             BuildUi();
@@ -159,7 +162,7 @@ namespace XiaoYaOpt
 
             // ---- 角色設定 ----
             _grpProfile.Text = "角色設定（每個角色的技能與時間）";
-            _grpProfile.SetBounds(12, 182, 616, 300);
+            _grpProfile.SetBounds(12, 182, 616, 330);
             Controls.Add(_grpProfile);
 
             AddLabel(_grpProfile, "編輯", 12, 25);
@@ -180,51 +183,62 @@ namespace XiaoYaOpt
             _btnDelete.Click += delegate { DeleteProfile(); };
             _grpProfile.Controls.AddRange(new Control[] { _cboProfile, _btnNew, _btnCopy, _btnRename, _btnDelete });
 
+            AddLabel(_grpProfile, "職業", 12, 59);
+            _cboJob.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cboJob.SetBounds(50, 56, 234, 23);
+            _cboJob.MaxDropDownItems = 20;
+            foreach (var j in Jobs.All()) _cboJob.Items.Add(j);
+            _cboJob.SelectedIndexChanged += OnJobChanged;
             _btnImport.Text = "從遊戲匯入快捷列…";
-            _btnImport.SetBounds(12, 54, 150, 27);
+            _btnImport.SetBounds(292, 54, 140, 27);
             _btnImport.Click += delegate { ImportFromGame(); };
-            _btnRecalc.Text = "依技能表重算時間";
-            _btnRecalc.SetBounds(166, 54, 140, 27);
-            _btnRecalc.Click += delegate { RecalcTimes(); };
             _btnDb.Text = "技能表…";
-            _btnDb.SetBounds(310, 54, 70, 27);
+            _btnDb.SetBounds(436, 54, 66, 27);
             _btnDb.Click += delegate { ChooseSkillDb(); };
-            _lblDb.SetBounds(386, 59, 222, 20);
+            _lblDb.SetBounds(506, 59, 104, 20);
             _lblDb.AutoEllipsis = true;
             _lblDb.ForeColor = Color.DimGray;
-            _grpProfile.Controls.AddRange(new Control[] { _btnImport, _btnRecalc, _btnDb, _lblDb });
+            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _btnImport, _btnDb, _lblDb });
 
             AddLabel(_grpProfile, "啟用", 14, 90);
-            AddLabel(_grpProfile, "按鍵", 70, 90);
-            AddLabel(_grpProfile, "技能", 150, 90);
-            AddLabel(_grpProfile, "技能時間(毫秒)", 330, 90);
-            AddLabel(_grpProfile, "點滑鼠", 440, 90);
-            AddLabel(_grpProfile, "延遲時間(毫秒)", 508, 90);
+            AddLabel(_grpProfile, "按鍵", 60, 90);
+            AddLabel(_grpProfile, "技能", 130, 90);
+            AddLabel(_grpProfile, "等級", 294, 90);
+            AddLabel(_grpProfile, "技能時間(毫秒)", 346, 90);
+            AddLabel(_grpProfile, "點滑鼠", 446, 90);
+            AddLabel(_grpProfile, "延遲時間(毫秒)", 512, 90);
 
             KeyItem[] keys = BuildKeyList();
             foreach (var k in keys) _vkByName[k.Name] = k.Vk;
             for (int i = 0; i < SlotCount; i++)
             {
-                int y = 112 + i * 29;
+                int y = 112 + i * 29, slot = i;
                 _chkEnabled[i] = new CheckBox { Text = (i + 1).ToString() };
-                _chkEnabled[i].SetBounds(14, y, 50, 22);
+                _chkEnabled[i].SetBounds(14, y, 44, 22);
                 _cboKey[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                 _cboKey[i].Items.AddRange(keys);
-                _cboKey[i].SetBounds(70, y, 72, 23);
-                _lblSkill[i] = new Label { AutoEllipsis = true, BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleLeft };
-                _lblSkill[i].SetBounds(150, y, 172, 23);
+                _cboKey[i].SetBounds(60, y, 64, 23);
+                _cboSkill[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, DropDownWidth = 240, MaxDropDownItems = 20 };
+                _cboSkill[i].SetBounds(130, y, 158, 23);
+                _cboSkill[i].SelectedIndexChanged += delegate { OnSkillChanged(slot); };
+                _cboLv[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+                _cboLv[i].SetBounds(294, y, 46, 23);
+                _cboLv[i].SelectedIndexChanged += delegate { OnLevelChanged(slot); };
                 _numInterval[i] = MakeNumber(50, 3600000, 1000);
-                _numInterval[i].SetBounds(330, y, 100, 23);
+                _numInterval[i].SetBounds(346, y, 94, 23);
                 _chkMouse[i] = new CheckBox { Text = "點一下" };
-                _chkMouse[i].SetBounds(440, y, 64, 22);
+                _chkMouse[i].SetBounds(446, y, 62, 22);
                 _numDelay[i] = MakeNumber(0, 60000, 200);
-                _numDelay[i].SetBounds(508, y, 96, 23);
-                _grpProfile.Controls.AddRange(new Control[] { _chkEnabled[i], _cboKey[i], _lblSkill[i], _numInterval[i], _chkMouse[i], _numDelay[i] });
+                _numDelay[i].SetBounds(512, y, 94, 23);
+                _grpProfile.Controls.AddRange(new Control[] { _chkEnabled[i], _cboKey[i], _cboSkill[i], _cboLv[i], _numInterval[i], _chkMouse[i], _numDelay[i] });
             }
+            _lblHint.SetBounds(12, 290, 594, 34);
+            _lblHint.ForeColor = Color.DimGray;
+            _grpProfile.Controls.Add(_lblHint);
 
             // ---- 選項 ----
             _grpOptions.Text = "選項（所有視窗共用）";
-            _grpOptions.SetBounds(12, 490, 616, 200);
+            _grpOptions.SetBounds(12, 520, 616, 200);
             Controls.Add(_grpOptions);
             var modePanel = new Panel();
             modePanel.SetBounds(8, 18, 600, 50);
@@ -271,15 +285,15 @@ namespace XiaoYaOpt
 
             // ---- 下方按鈕 ----
             _btnStart.Text = "開始（Ctrl+F10）";
-            _btnStart.SetBounds(12, 702, 130, 32);
+            _btnStart.SetBounds(12, 732, 130, 32);
             _btnStart.Click += delegate { StartRun(); };
             _btnStop.Text = "停止";
-            _btnStop.SetBounds(150, 702, 80, 32);
+            _btnStop.SetBounds(150, 732, 80, 32);
             _btnStop.Click += delegate { StopRun("已停止"); };
             _btnSave.Text = "儲存設定";
-            _btnSave.SetBounds(238, 702, 90, 32);
+            _btnSave.SetBounds(238, 732, 90, 32);
             _btnSave.Click += delegate { SaveSettings(); _lblStatus.Text = "設定已儲存"; };
-            _lblStatus.SetBounds(338, 700, 290, 44);
+            _lblStatus.SetBounds(338, 730, 290, 44);
             Controls.AddRange(new Control[] { _btnStart, _btnStop, _btnSave, _lblStatus });
         }
 
@@ -407,17 +421,22 @@ namespace XiaoYaOpt
         private void ProfileToEditor(Profile p)
         {
             _loadingEditor = true;
+            SelectJob(p.Job);
+            _cboJob.Enabled = _db != null;
             for (int i = 0; i < SlotCount; i++)
             {
                 var d = p.Slots[i];
                 _chkEnabled[i].Checked = d.Enabled;
                 SelectKey(_cboKey[i], d.KeyName);
+                PopulateSkillCombo(i, p.Job, d);
                 _numInterval[i].Value = Clamp(_numInterval[i], d.IntervalMs);
+                _numInterval[i].BackColor = SystemColors.Window;
                 _chkMouse[i].Checked = d.Mouse;
                 _numDelay[i].Value = Clamp(_numDelay[i], d.DelayMs);
-                _lblSkill[i].Text = string.IsNullOrEmpty(d.SkillLabel) ? "（手動設定）" : d.SkillLabel;
-                _lblSkill[i].ForeColor = string.IsNullOrEmpty(d.SkillName) ? Color.DimGray : SystemColors.ControlText;
             }
+            _lblHint.Text = _db == null
+                ? "尚未載入技能表：按「技能表…」選擇 技能表.csv 後，就能依職業選擇技能並自動帶入時間。"
+                : "選好職業後，在「技能」欄挑選技能與等級，技能時間和延遲時間會自動帶入（仍可手動修改）。";
             _loadingEditor = false;
         }
 
@@ -431,7 +450,152 @@ namespace XiaoYaOpt
                 d.IntervalMs = (int)_numInterval[i].Value;
                 d.Mouse = _chkMouse[i].Checked;
                 d.DelayMs = (int)_numDelay[i].Value;
+                var entry = _cboSkill[i].SelectedItem as SkillEntry;
+                if (entry == null)
+                {
+                    d.SkillName = ""; d.SkillLevel = 0; d.SkillLabel = "";
+                }
+                else
+                {
+                    int lv = _cboLv[i].SelectedItem is int ? (int)_cboLv[i].SelectedItem : d.SkillLevel;
+                    d.SkillName = entry.EnName; d.SkillLevel = lv; d.SkillLabel = entry.Display + " Lv" + lv;
+                }
             }
+        }
+
+        private void SelectJob(string slug)
+        {
+            foreach (JobInfo j in _cboJob.Items)
+                if (j.Slug == (slug ?? "")) { _cboJob.SelectedItem = j; return; }
+            _cboJob.SelectedIndex = 0;
+        }
+
+        /// <summary>技能下拉：「手動設定」＋該職業的技能。角色設定裡已有、但不屬於這個職業的技能也會保留在清單中。</summary>
+        private void PopulateSkillCombo(int i, string job, SlotData d)
+        {
+            var combo = _cboSkill[i];
+            combo.BeginUpdate();
+            combo.Items.Clear();
+            combo.Items.Add(ManualItem);
+            SkillEntry selected = null;
+            if (_db != null)
+            {
+                foreach (var e in _db.SkillsOf(job)) combo.Items.Add(e);
+                if (!string.IsNullOrEmpty(d.SkillName))
+                {
+                    selected = combo.Items.OfType<SkillEntry>().FirstOrDefault(e => SameSkill(e.EnName, d.SkillName));
+                    if (selected == null)
+                    {
+                        selected = _db.SkillsOf(Jobs.AllSlug).FirstOrDefault(e => SameSkill(e.EnName, d.SkillName));
+                        if (selected != null) combo.Items.Insert(1, selected);
+                    }
+                }
+            }
+            if (selected == null && !string.IsNullOrEmpty(d.SkillName))
+            {
+                // 技能表沒有這個技能（或未載入技能表）：保留成一個只有名稱的項目，避免資料遺失。
+                selected = new SkillEntry { EnName = d.SkillName, ZhName = d.SkillLabel.Length > 0 ? d.SkillLabel : d.SkillName };
+                combo.Items.Insert(1, selected);
+            }
+            combo.SelectedItem = selected != null ? (object)selected : ManualItem;
+            combo.EndUpdate();
+            PopulateLevelCombo(i, selected, d.SkillLevel);
+        }
+
+        private void PopulateLevelCombo(int i, SkillEntry entry, int level)
+        {
+            var combo = _cboLv[i];
+            combo.Items.Clear();
+            combo.Enabled = entry != null;
+            if (entry == null) return;
+            foreach (int lv in entry.Levels.Keys) combo.Items.Add(lv);
+            if (combo.Items.Count == 0 && level > 0) combo.Items.Add(level);
+            if (combo.Items.Count == 0) return;
+            if (combo.Items.Contains(level)) combo.SelectedItem = level;
+            else combo.SelectedIndex = combo.Items.Count - 1; // 預設最高等級
+        }
+
+        private static bool SameSkill(string a, string b)
+        {
+            return string.Equals(Normalize(a), Normalize(b), StringComparison.Ordinal);
+        }
+
+        private static string Normalize(string s)
+        {
+            return new string((s ?? "").Normalize(System.Text.NormalizationForm.FormKC).ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        }
+
+        private void OnSkillChanged(int i)
+        {
+            if (_loadingEditor) return;
+            _loadingEditor = true;
+            var entry = _cboSkill[i].SelectedItem as SkillEntry;
+            PopulateLevelCombo(i, entry, entry != null ? entry.MaxLevel : 0);
+            _loadingEditor = false;
+            if (entry == null)
+            {
+                _numInterval[i].BackColor = SystemColors.Window;
+                _lblHint.Text = string.Format("第 {0} 格改為手動設定：請自行填寫按鍵、技能時間與延遲時間。", i + 1);
+                return;
+            }
+            ApplyChosenSkill(i);
+        }
+
+        private void OnLevelChanged(int i)
+        {
+            if (_loadingEditor) return;
+            ApplyChosenSkill(i);
+        }
+
+        /// <summary>依選到的技能與等級，自動帶入技能時間與延遲時間。</summary>
+        private void ApplyChosenSkill(int i)
+        {
+            var entry = _cboSkill[i].SelectedItem as SkillEntry;
+            if (entry == null || !(_cboLv[i].SelectedItem is int)) return;
+            int lv = (int)_cboLv[i].SelectedItem;
+            var temp = new SlotData { SkillName = entry.EnName, SkillLevel = lv, IntervalMs = (int)_numInterval[i].Value, DelayMs = (int)_numDelay[i].Value };
+            bool ok = GameShortcuts.ApplySuggestion(temp, _db);
+            _numInterval[i].Value = Clamp(_numInterval[i], temp.IntervalMs);
+            _numDelay[i].Value = Clamp(_numDelay[i], temp.DelayMs);
+            _chkEnabled[i].Checked = ok;
+            _numInterval[i].BackColor = ok ? SystemColors.Window : Color.LightYellow;
+
+            SkillInfo info;
+            entry.Levels.TryGetValue(lv, out info);
+            string times = info == null ? "技能表沒有這個等級的資料"
+                : string.Format("詠唱 {0}、冷卻 {1}、持續 {2}", Sec(info.CastSec), Sec(info.CooldownSec), Sec(info.DurationSec));
+            _lblHint.Text = string.Format("第 {0} 格 {1} Lv{2}：{3}。{4}", i + 1, entry.Display, lv, times,
+                ok ? string.Format("已帶入技能時間 {0:N1} 秒、延遲 {1:N1} 秒。", temp.IntervalMs / 1000.0, temp.DelayMs / 1000.0)
+                   : "時間無法可靠推算（黃色欄位），請確認技能時間後再勾選啟用。");
+        }
+
+        private static string Sec(double? v)
+        {
+            return v.HasValue ? v.Value.ToString("0.##") + " 秒" : "—";
+        }
+
+        private void OnJobChanged(object sender, EventArgs e)
+        {
+            if (_loadingEditor || _current == null) return;
+            EditorToProfile(_current);
+            var job = (JobInfo)_cboJob.SelectedItem;
+            _current.Job = job.Slug;
+            // 不屬於新職業的技能清掉並停用，避免誤送。
+            int cleared = 0;
+            if (_db != null)
+            {
+                var names = new HashSet<string>(_db.SkillsOf(job.Slug).Select(x => Normalize(x.EnName)));
+                foreach (var d in _current.Slots)
+                {
+                    if (string.IsNullOrEmpty(d.SkillName) || names.Contains(Normalize(d.SkillName))) continue;
+                    d.SkillName = ""; d.SkillLevel = 0; d.SkillLabel = ""; d.Enabled = false;
+                    cleared++;
+                }
+            }
+            ProfileToEditor(_current);
+            int count = _db != null ? _db.SkillsOf(job.Slug).Count : 0;
+            _lblHint.Text = string.Format("{0}：可選 {1} 個技能。{2}", job.Display, count,
+                cleared > 0 ? string.Format("有 {0} 格原本的技能不屬於這個職業，已清除並停用。", cleared) : "");
         }
 
         private void NewProfile(bool copy)
@@ -496,6 +660,8 @@ namespace XiaoYaOpt
                 }
                 else target = _current;
                 int skipped = GameShortcuts.ApplyTo(target, dlg.Selected, _db);
+                if (_db != null)
+                    target.Job = _db.GuessJob(dlg.Selected.Shortcuts.Where(s => s.SkillName != null).Select(s => s.SkillName));
                 _store.Save(target);
                 _current = target;
                 ProfileToEditor(_current);
@@ -506,36 +672,16 @@ namespace XiaoYaOpt
             }
         }
 
-        private void RecalcTimes()
-        {
-            if (_db == null)
-            {
-                MessageBox.Show(this, "尚未載入技能表，請先按「技能表…」選擇 技能表.csv。", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            EditorToProfile(_current);
-            int ok = 0, total = 0;
-            foreach (var d in _current.Slots)
-            {
-                if (string.IsNullOrEmpty(d.SkillName)) continue;
-                total++;
-                if (GameShortcuts.ApplySuggestion(d, _db)) ok++;
-            }
-            ProfileToEditor(_current);
-            _store.Save(_current);
-            _lblStatus.Text = total == 0
-                ? "這個角色設定沒有從遊戲匯入的技能，無法自動計算"
-                : string.Format("已重算 {0} 個技能的時間{1}", ok, total > ok ? string.Format("，{0} 個需要手動確認", total - ok) : "");
-        }
-
         private void ChooseSkillDb()
         {
             using (var dlg = new OpenFileDialog { Filter = "技能表 (*.csv)|*.csv|所有檔案 (*.*)|*.*", Title = "選擇 技能表.csv" })
             {
                 if (File.Exists(_skillDbPath)) dlg.FileName = _skillDbPath;
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                EditorToProfile(_current);
                 _skillDbPath = dlg.FileName;
                 LoadSkillDb(true);
+                ProfileToEditor(_current);
                 SaveSettings();
             }
         }
@@ -748,13 +894,12 @@ namespace XiaoYaOpt
             foreach (string k in s.Keys())
                 if (k.StartsWith("assign.", StringComparison.Ordinal)) _assignByTitle[k.Substring(7)] = s.Get(k, "");
 
+            LoadSkillDb(false);
             _store.Load();
             MigrateOldSlots(s);
             _current = _store.Find(s.Get("profile", ProfileStore.DefaultName)) ?? _store.Find(ProfileStore.DefaultName);
             ProfileToEditor(_current);
             RefreshProfileCombo(_current);
-            _btnDelete.Enabled = _btnRename.Enabled = _current.Name != ProfileStore.DefaultName;
-            LoadSkillDb(false);
         }
 
         /// <summary>舊版把技能設定存在主設定檔；第一次執行新版時搬到「預設」角色設定。</summary>

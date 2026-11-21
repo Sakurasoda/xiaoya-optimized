@@ -26,6 +26,8 @@ namespace XiaoYaOpt
     {
         public const int SlotCount = 6;
         public string Name;
+        /// <summary>職業代號（官網網址代號，例如 blacksmith）；空字串表示全部職業。</summary>
+        public string Job = "";
         public SlotData[] Slots = new SlotData[SlotCount];
 
         public Profile(string name)
@@ -36,7 +38,7 @@ namespace XiaoYaOpt
 
         public Profile Clone(string newName)
         {
-            var p = new Profile(newName);
+            var p = new Profile(newName) { Job = Job };
             for (int i = 0; i < SlotCount; i++) p.Slots[i] = Slots[i].Clone();
             return p;
         }
@@ -70,6 +72,7 @@ namespace XiaoYaOpt
                 {
                     var s = new Settings(f);
                     var p = new Profile(s.Get("name", Path.GetFileNameWithoutExtension(f)));
+                    p.Job = s.Get("job", "");
                     for (int i = 0; i < Profile.SlotCount; i++)
                     {
                         string n = "slot" + (i + 1) + ".";
@@ -94,6 +97,7 @@ namespace XiaoYaOpt
             Directory.CreateDirectory(_dir);
             var s = new Settings(FileFor(p.Name));
             s.Set("name", p.Name);
+            s.Set("job", p.Job ?? "");
             for (int i = 0; i < Profile.SlotCount; i++)
             {
                 string n = "slot" + (i + 1) + ".";

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace XiaoYaOpt
@@ -24,6 +25,19 @@ namespace XiaoYaOpt
         }
     }
 
+    /// <summary>某職業可以選的一個技能（含各等級的資料）。</summary>
+    internal sealed class SkillEntry
+    {
+        public string EnName;
+        public string ZhName;
+        public int JobLevel;
+        public SortedDictionary<int, SkillInfo> Levels = new SortedDictionary<int, SkillInfo>();
+
+        public string Display { get { return ZhName.Length > 0 ? ZhName : EnName; } }
+        public int MaxLevel { get { int m = 0; foreach (int k in Levels.Keys) m = k; return m; } }
+        public override string ToString() { return Display; }
+    }
+
     /// <summary>
     /// 讀取「技能表.csv」（由遊戲檔案與 Nekogame 官網整合而成，放在使用者本機）。
     /// 以英文技能名 + 等級查詢，對應遊戲快捷列裡的「/useskill 名稱 等級」。
@@ -31,6 +45,31 @@ namespace XiaoYaOpt
     internal sealed class SkillDb
     {
         private readonly Dictionary<string, SkillInfo> _byKey = new Dictionary<string, SkillInfo>();
+        /// <summary>職業代號 → 該職業的技能（依習得職業等級排序）。空字串代表全部職業。</summary>
+        private readonly Dictionary<string, List<SkillEntry>> _byJob = new Dictionary<string, List<SkillEntry>>();
+
+        /// <summary>列出某職業可選的技能；jobSlug 為空字串時列出所有有官網資料的技能。</summary>
+        public IList<SkillEntry> SkillsOf(string jobSlug)
+        {
+            List<SkillEntry> list;
+            return _byJob.TryGetValue(jobSlug ?? "", out list) ? list : new List<SkillEntry>();
+        }
+
+        /// <summary>找出包含最多指定技能的職業（用於匯入時自動判斷職業）。</summary>
+        public string GuessJob(IEnumerable<string> enNames)
+        {
+            var wanted = new HashSet<string>();
+            foreach (string n in enNames) { string k = NameKey(n); if (k != null) wanted.Add(k); }
+            string best = ""; int bestCount = 0;
+            foreach (var kv in _byJob)
+            {
+                if (kv.Key.Length == 0) continue;
+                int c = 0;
+                foreach (var e in kv.Value) if (wanted.Contains(NameKey(e.EnName))) c++;
+                if (c > bestCount) { bestCount = c; best = kv.Key; }
+            }
+            return best;
+        }
 
         public int Count { get { return _byKey.Count; } }
         public string Path { get; private set; }
@@ -45,7 +84,8 @@ namespace XiaoYaOpt
                 int cId = header.IndexOf("技能ID"), cLv = header.IndexOf("等級"), cZh = header.IndexOf("中文名稱"),
                     cOrig = header.IndexOf("原文名稱"), cWikiEn = header.IndexOf("官網英文名"),
                     cCast = header.IndexOf("詠唱時間(秒)"), cCd = header.IndexOf("冷卻時間(秒)"), cDur = header.IndexOf("持續時間(秒)"),
-                    cType = header.IndexOf("類型");
+                    cType = header.IndexOf("類型"), cJob = header.IndexOf("職業"), cJobLv = header.IndexOf("習得職業等級");
+                var entries = new Dictionary<string, Dictionary<string, SkillEntry>>(); // job -> nameKey -> entry
                 if (cLv < 0 || cZh < 0 || cOrig < 0 || cWikiEn < 0 || cCast < 0 || cCd < 0 || cDur < 0)
                     throw new InvalidDataException("技能表缺少必要欄位（等級、中文名稱、原文名稱、官網英文名、詠唱/冷卻/持續時間）");
 
@@ -68,9 +108,35 @@ namespace XiaoYaOpt
                     // 官網英文名與遊戲原文名都建索引；有官網時間資料的列優先。
                     db.Add(row[cWikiEn], lv, info);
                     db.Add(row[cOrig], lv, info);
+
+                    // 依職業分組（只收官網有資料的技能）
+                    string jobs = cJob >= 0 ? row[cJob] : "";
+                    if (row[cWikiEn].Length == 0 || jobs.Length == 0) continue;
+                    int jobLv;
+                    int.TryParse(cJobLv >= 0 ? row[cJobLv] : "", out jobLv);
+                    var slugs = new List<string>(jobs.Split(new[] { '、' }, StringSplitOptions.RemoveEmptyEntries));
+                    slugs.Add(""); // 全部職業
+                    foreach (string slug in slugs)
+                    {
+                        Dictionary<string, SkillEntry> map;
+                        if (!entries.TryGetValue(slug, out map)) entries[slug] = map = new Dictionary<string, SkillEntry>();
+                        string nk = NameKey(row[cWikiEn]);
+                        SkillEntry e;
+                        if (!map.TryGetValue(nk, out e))
+                            map[nk] = e = new SkillEntry { EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv };
+                        if (!e.Levels.ContainsKey(lv)) e.Levels[lv] = info;
+                    }
                 }
+                foreach (var kv in entries)
+                    db._byJob[kv.Key] = kv.Value.Values.OrderBy(x => x.JobLevel).ThenBy(x => x.Display, StringComparer.CurrentCulture).ToList();
             }
             return db;
+        }
+
+        private static string NameKey(string name)
+        {
+            string k = Key(name, 0);
+            return k == null ? null : k.Substring(0, k.Length - 2);
         }
 
         private void Add(string name, int level, SkillInfo info)
