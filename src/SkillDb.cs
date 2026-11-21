@@ -28,12 +28,16 @@ namespace XiaoYaOpt
     /// <summary>某職業可以選的一個技能（含各等級的資料）。</summary>
     internal sealed class SkillEntry
     {
+        public uint Id;
+        public string Type = "";
         public string EnName;
         public string ZhName;
         public int JobLevel;
         public SortedDictionary<int, SkillInfo> Levels = new SortedDictionary<int, SkillInfo>();
 
         public string Display { get { return ZhName.Length > 0 ? ZhName : EnName; } }
+        /// <summary>被動技能不能按鍵施放，不列入技能選單。</summary>
+        public bool IsPassive { get { return Type.StartsWith("Passive", StringComparison.OrdinalIgnoreCase); } }
         public int MaxLevel { get { int m = 0; foreach (int k in Levels.Keys) m = k; return m; } }
         public override string ToString() { return Display; }
     }
@@ -45,8 +49,16 @@ namespace XiaoYaOpt
     internal sealed class SkillDb
     {
         private readonly Dictionary<string, SkillInfo> _byKey = new Dictionary<string, SkillInfo>();
-        /// <summary>職業代號 → 該職業的技能（依習得職業等級排序）。空字串代表全部職業。</summary>
+        /// <summary>職業代號 → 該職業的技能（依習得職業等級排序，不含被動技能）。空字串代表全部職業。</summary>
         private readonly Dictionary<string, List<SkillEntry>> _byJob = new Dictionary<string, List<SkillEntry>>();
+        /// <summary>技能 ID → 技能（含官網沒有資料、只有客戶端資料的技能）。</summary>
+        private readonly Dictionary<uint, SkillEntry> _byId = new Dictionary<uint, SkillEntry>();
+
+        public SkillEntry FindById(uint id)
+        {
+            SkillEntry e;
+            return _byId.TryGetValue(id, out e) ? e : null;
+        }
 
         /// <summary>列出某職業可選的技能；jobSlug 為空字串時列出所有有官網資料的技能。</summary>
         public IList<SkillEntry> SkillsOf(string jobSlug)
@@ -128,6 +140,21 @@ namespace XiaoYaOpt
                     db.Add(row[cWikiEn], lv, info);
                     db.Add(row[cOrig], lv, info);
 
+                    // 依技能 ID 索引（副職業表用 ID 對應）
+                    uint id;
+                    if (cId >= 0 && uint.TryParse(row[cId], out id))
+                    {
+                        SkillEntry byId;
+                        if (!db._byId.TryGetValue(id, out byId))
+                            db._byId[id] = byId = new SkillEntry
+                            {
+                                Id = id, Type = info.Type,
+                                EnName = row[cWikiEn].Length > 0 ? row[cWikiEn] : row[cOrig],
+                                ZhName = row[cZh].Trim()
+                            };
+                        if (!byId.Levels.ContainsKey(lv)) byId.Levels[lv] = info;
+                    }
+
                     // 依職業分組（只收官網有資料的技能）
                     string jobs = cJob >= 0 ? row[cJob] : "";
                     if (row[cWikiEn].Length == 0 || jobs.Length == 0) continue;
@@ -142,12 +169,13 @@ namespace XiaoYaOpt
                         string nk = NameKey(row[cWikiEn]);
                         SkillEntry e;
                         if (!map.TryGetValue(nk, out e))
-                            map[nk] = e = new SkillEntry { EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv };
+                            map[nk] = e = new SkillEntry { EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type };
                         if (!e.Levels.ContainsKey(lv)) e.Levels[lv] = info;
                     }
                 }
                 foreach (var kv in entries)
-                    db._byJob[kv.Key] = kv.Value.Values.OrderBy(x => x.JobLevel).ThenBy(x => x.Display, StringComparer.CurrentCulture).ToList();
+                    db._byJob[kv.Key] = kv.Value.Values.Where(x => !x.IsPassive)
+                        .OrderBy(x => x.JobLevel).ThenBy(x => x.Display, StringComparer.CurrentCulture).ToList();
             }
             return db;
         }

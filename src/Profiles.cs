@@ -28,8 +28,10 @@ namespace XiaoYaOpt
         public string Name;
         /// <summary>職業代號（官網網址代號，例如 blacksmith）；空字串表示全部職業。</summary>
         public string Job = "";
-        /// <summary>副職業代號；空字串表示沒有副職業。</summary>
+        /// <summary>副職業體系 ID（例如 "9" = 礦工系）；空字串表示沒有副職業。</summary>
         public string SubJob = "";
+        /// <summary>副職業等級；0 表示不限（列出體系內全部可學的技能與等級）。</summary>
+        public int SubJobLevel;
         public SlotData[] Slots = new SlotData[SlotCount];
 
         public Profile(string name)
@@ -40,7 +42,7 @@ namespace XiaoYaOpt
 
         public Profile Clone(string newName)
         {
-            var p = new Profile(newName) { Job = Job, SubJob = SubJob };
+            var p = new Profile(newName) { Job = Job, SubJob = SubJob, SubJobLevel = SubJobLevel };
             for (int i = 0; i < SlotCount; i++) p.Slots[i] = Slots[i].Clone();
             return p;
         }
@@ -76,6 +78,10 @@ namespace XiaoYaOpt
                     var p = new Profile(s.Get("name", Path.GetFileNameWithoutExtension(f)));
                     p.Job = s.Get("job", "");
                     p.SubJob = s.Get("subJob", "");
+                    int sysId;
+                    if (p.SubJob.Length > 0 && !int.TryParse(p.SubJob, out sysId))
+                        p.SubJob = Jobs.SystemOfJob(p.SubJob); // 舊版存的是單一職業代號，轉成所屬體系
+                    p.SubJobLevel = s.GetInt("subJobLevel", 0);
                     for (int i = 0; i < Profile.SlotCount; i++)
                     {
                         string n = "slot" + (i + 1) + ".";
@@ -102,6 +108,7 @@ namespace XiaoYaOpt
             s.Set("name", p.Name);
             s.Set("job", p.Job ?? "");
             s.Set("subJob", p.SubJob ?? "");
+            s.Set("subJobLevel", p.SubJobLevel);
             for (int i = 0; i < Profile.SlotCount; i++)
             {
                 string n = "slot" + (i + 1) + ".";

@@ -45,6 +45,8 @@ namespace XiaoYaOpt
         private readonly Button _btnDelete = new Button();
         private readonly ComboBox _cboJob = new ComboBox();
         private readonly ComboBox _cboSubJob = new ComboBox();
+        private readonly NumericUpDown _numSubLv = new NumericUpDown();
+        private DualJobDb _dj;
         private readonly ToolTip _tip = new ToolTip();
 
         /// <summary>技能下拉的項目：主職業技能直接顯示名稱，副職業技能前面加「［副］」。</summary>
@@ -52,6 +54,8 @@ namespace XiaoYaOpt
         {
             public SkillEntry Entry;
             public bool Sub;
+            /// <summary>可選的最高等級；0 表示不限（主職業技能）。副職業技能依副職業表限制。</summary>
+            public int MaxLevel;
             public override string ToString() { return (Sub ? "［副］" : "") + Entry.Display; }
         }
         private readonly Button _btnImport = new Button();
@@ -200,22 +204,27 @@ namespace XiaoYaOpt
 
             AddLabel(_grpProfile, "職業", 12, 59);
             _cboJob.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cboJob.SetBounds(50, 56, 180, 23);
+            _cboJob.SetBounds(50, 56, 170, 23);
             _cboJob.DropDownWidth = 220;
             _cboJob.MaxDropDownItems = 20;
             foreach (var j in Jobs.All()) _cboJob.Items.Add(j);
             _cboJob.SelectedIndexChanged += OnJobChanged;
-            AddLabel(_grpProfile, "副職業", 238, 59);
+            AddLabel(_grpProfile, "副職業", 226, 59);
             _cboSubJob.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cboSubJob.SetBounds(288, 56, 180, 23);
-            _cboSubJob.DropDownWidth = 220;
+            _cboSubJob.SetBounds(274, 56, 150, 23);
+            _cboSubJob.DropDownWidth = 200;
             _cboSubJob.MaxDropDownItems = 20;
             foreach (var j in Jobs.SubJobChoices()) _cboSubJob.Items.Add(j);
             _cboSubJob.SelectedIndexChanged += OnJobChanged;
+            AddLabel(_grpProfile, "Lv", 428, 59);
+            _numSubLv.SetBounds(448, 56, 52, 23);
+            _numSubLv.Maximum = 999;
+            _numSubLv.ValueChanged += OnJobChanged;
+            _tip.SetToolTip(_numSubLv, "副職業等級：只列出這個等級已經學得到的技能與技能等級。0 = 不限");
             _btnImport.Text = "從遊戲匯入…";
-            _btnImport.SetBounds(476, 54, 132, 27);
+            _btnImport.SetBounds(506, 54, 102, 27);
             _btnImport.Click += delegate { ImportFromGame(); };
-            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _cboSubJob, _btnImport });
+            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _cboSubJob, _numSubLv, _btnImport });
 
             AddLabel(_grpProfile, "啟用", 14, 90);
             AddLabel(_grpProfile, "按鍵", 60, 90);
@@ -440,7 +449,9 @@ namespace XiaoYaOpt
             _loadingEditor = true;
             SelectJob(_cboJob, p.Job);
             SelectJob(_cboSubJob, p.SubJob);
+            _numSubLv.Value = Clamp(_numSubLv, p.SubJobLevel);
             _cboJob.Enabled = _cboSubJob.Enabled = _db != null;
+            _numSubLv.Enabled = _db != null && !string.IsNullOrEmpty(p.SubJob);
             for (int i = 0; i < SlotCount; i++)
             {
                 var d = p.Slots[i];
@@ -494,7 +505,10 @@ namespace XiaoYaOpt
             return c != null ? c.Entry : null;
         }
 
-        /// <summary>主職業與副職業可選的技能（主職業在前；兩邊都有的技能只列一次，算主職業）。</summary>
+        /// <summary>
+        /// 主職業與副職業可選的技能（主職業在前；兩邊都有的技能只列一次，算主職業）。
+        /// 副職業技能來自遊戲的 dualjob_skill_learn.csv：只列體系內學得到的技能，等級上限也依表格（與副職業等級）限制。
+        /// </summary>
         private List<SkillChoice> ChoicesFor(Profile p)
         {
             var list = new List<SkillChoice>();
@@ -502,9 +516,18 @@ namespace XiaoYaOpt
             var seen = new HashSet<string>();
             foreach (var e in _db.SkillsOf(p.Job))
                 if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e });
-            if (!string.IsNullOrEmpty(p.SubJob) && p.Job.Length > 0)
-                foreach (var e in _db.SkillsOf(p.SubJob))
-                    if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e, Sub = true });
+            int system;
+            if (_dj != null && int.TryParse(p.SubJob, out system))
+            {
+                foreach (var s in _dj.SkillsOf(system))
+                {
+                    int max = s.MaxSkillLevel(p.SubJobLevel);
+                    if (max == 0) continue;
+                    var e = _db.FindById(s.SkillId);
+                    if (e == null || e.IsPassive) continue;
+                    if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e, Sub = true, MaxLevel = max });
+                }
+            }
             return list;
         }
 
@@ -531,16 +554,20 @@ namespace XiaoYaOpt
             }
             combo.SelectedItem = selected != null ? (object)selected : ManualItem;
             combo.EndUpdate();
-            PopulateLevelCombo(i, selected != null ? selected.Entry : null, d.SkillLevel);
+            PopulateLevelCombo(i, selected, d.SkillLevel);
         }
 
-        private void PopulateLevelCombo(int i, SkillEntry entry, int level)
+        private void PopulateLevelCombo(int i, SkillChoice choice, int level)
         {
             var combo = _cboLv[i];
             combo.Items.Clear();
-            combo.Enabled = entry != null;
-            if (entry == null) return;
-            foreach (int lv in entry.Levels.Keys) combo.Items.Add(lv);
+            combo.Enabled = choice != null;
+            if (choice == null) return;
+            var entry = choice.Entry;
+            foreach (int lv in entry.Levels.Keys)
+                if (choice.MaxLevel == 0 || lv <= choice.MaxLevel) combo.Items.Add(lv);
+            if (combo.Items.Count == 0 && choice.MaxLevel > 0)
+                for (int lv = 1; lv <= choice.MaxLevel; lv++) combo.Items.Add(lv);
             if (combo.Items.Count == 0 && level > 0) combo.Items.Add(level);
             if (combo.Items.Count == 0) return;
             if (combo.Items.Contains(level)) combo.SelectedItem = level;
@@ -561,8 +588,9 @@ namespace XiaoYaOpt
         {
             if (_loadingEditor) return;
             _loadingEditor = true;
-            var entry = ChosenEntry(i);
-            PopulateLevelCombo(i, entry, entry != null ? entry.MaxLevel : 0);
+            var choice = _cboSkill[i].SelectedItem as SkillChoice;
+            var entry = choice != null ? choice.Entry : null;
+            PopulateLevelCombo(i, choice, int.MaxValue); // 預設可選的最高等級
             _loadingEditor = false;
             if (entry == null)
             {
@@ -613,7 +641,16 @@ namespace XiaoYaOpt
             var job = (JobInfo)_cboJob.SelectedItem;
             var sub = (JobInfo)_cboSubJob.SelectedItem;
             _current.Job = job.Slug;
-            _current.SubJob = sub != null && sub.Slug != job.Slug ? sub.Slug : "";
+            _current.SubJob = sub != null ? sub.Slug : "";
+            _current.SubJobLevel = (int)_numSubLv.Value;
+            if (_current.SubJob.Length > 0 && _dj == null && !EnsureDualJobData(true))
+            {
+                // 讀不到副職業表：不套用副職業，避免列出錯誤的技能。
+                _current.SubJob = "";
+                ProfileToEditor(_current);
+                _lblHint.Text = "沒有載入副職業表（需要遊戲資料夾），所以先不套用副職業。";
+                return;
+            }
             // 不屬於主職業或副職業的技能清掉並停用，避免誤送。
             var choices = ChoicesFor(_current);
             int cleared = 0;
@@ -627,14 +664,57 @@ namespace XiaoYaOpt
                     cleared++;
                 }
             }
+            var levelsBefore = _current.Slots.Select(d => d.SkillLevel).ToArray();
             ProfileToEditor(_current);
+            // 副職業等級調低時，超過上限的技能等級會在下拉中降到可用的最高等級；重新計算這些格的時間。
+            int lowered = 0;
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (ChosenEntry(i) == null || !(_cboLv[i].SelectedItem is int)) continue;
+                if ((int)_cboLv[i].SelectedItem == levelsBefore[i]) continue;
+                ApplyChosenSkill(i);
+                lowered++;
+            }
+            if (lowered > 0) EditorToProfile(_current);
             int mainCount = choices.Count(c => !c.Sub), subCount = choices.Count(c => c.Sub);
             string what = _current.SubJob.Length > 0
-                ? string.Format("{0}＋副職業 {1}：可選 {2} 個技能（主 {3}、副 {4}，副職業技能標示［副］）",
-                    job.Display, ((JobInfo)_cboSubJob.SelectedItem).Display, choices.Count, mainCount, subCount)
+                ? string.Format("{0}＋{1}{2}：可選 {3} 個技能（主 {4}、［副］{5}）",
+                    job.Display, ((JobInfo)_cboSubJob.SelectedItem).Display,
+                    _current.SubJobLevel > 0 ? " Lv" + _current.SubJobLevel : "", choices.Count, mainCount, subCount)
                 : string.Format("{0}：可選 {1} 個技能", job.Display, mainCount);
-            if (job.Slug.Length == 0 && sub != null && sub.Slug.Length > 0) what += "（主職業是「全部職業」時不另外列副職業）";
-            _lblHint.Text = what + "。" + (cleared > 0 ? string.Format("有 {0} 格原本的技能不屬於這些職業，已清除並停用。", cleared) : "");
+            _lblHint.Text = what + "。"
+                + (cleared > 0 ? string.Format("{0} 格技能已不可用，已清除並停用。", cleared) : "")
+                + (lowered > 0 ? string.Format("{0} 格技能等級超過副職業上限，已降級並重算時間。", lowered) : "");
+        }
+
+        /// <summary>載入遊戲裡的副職業表；需要遊戲資料夾，必要時詢問使用者。</summary>
+        private bool EnsureDualJobData(bool prompt)
+        {
+            if (_dj != null) return true;
+            if (!DualJobDb.LooksLikeGameDir(_gameDir))
+            {
+                if (!prompt) return false;
+                using (var dlg = new FolderBrowserDialog { Description = "副職業的可用技能要從遊戲資料讀取。請選擇遊戲資料夾（裡面有 eco.exe 與 data 資料夾）" })
+                {
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return false;
+                    if (!DualJobDb.LooksLikeGameDir(dlg.SelectedPath))
+                    {
+                        MessageBox.Show(this, "這個資料夾裡找不到 data\\xls\\table.hed，請確認是遊戲安裝資料夾。", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return false;
+                    }
+                    _gameDir = dlg.SelectedPath;
+                }
+            }
+            try
+            {
+                _dj = DualJobDb.Load(_gameDir);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (prompt) MessageBox.Show(this, "讀取副職業表失敗：" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
         }
 
         private void NewProfile(bool copy)
@@ -704,7 +784,9 @@ namespace XiaoYaOpt
                     string main, sub;
                     _db.GuessJobs(dlg.Selected.Shortcuts.Where(s => s.SkillName != null).Select(s => s.SkillName), out main, out sub);
                     target.Job = main;
-                    target.SubJob = sub;
+                    // 副職業是整個體系；和主職業同體系的技能不需要副職業。
+                    string subSystem = Jobs.SystemOfJob(sub);
+                    target.SubJob = subSystem.Length > 0 && subSystem != Jobs.SystemOfJob(main) && EnsureDualJobData(false) ? subSystem : "";
                 }
                 _store.Save(target);
                 _current = target;
@@ -940,6 +1022,7 @@ namespace XiaoYaOpt
                 if (k.StartsWith("assign.", StringComparison.Ordinal)) _assignByTitle[k.Substring(7)] = s.Get(k, "");
 
             LoadSkillDb(false);
+            EnsureDualJobData(false);
             _store.Load();
             MigrateOldSlots(s);
             _current = _store.Find(s.Get("profile", ProfileStore.DefaultName)) ?? _store.Find(ProfileStore.DefaultName);
