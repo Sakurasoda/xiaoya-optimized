@@ -52,6 +52,37 @@ F1~F6 | 设置1 | 真
 - 版權：「本人属所有生物所拥有-3- by-小雅」
 - 備註：「丫的,看什么看吖!!!!!!我叉你!!」
 
+### 2.5 送鍵方式（第二輪分析）
+
+易語言呼叫 DLL 命令的方式是 `MOV EAX, 編號` 再 `CALL 0x409b72`，編號就是 2.2 命令表的順序（0=`MapVirtualKeyA`、1=`keybd_event`、6=`PostMessageA`、8=`ShowWindowAsync`、9=`ShowWindow`、0x0E=`SetForegroundWindow`、0x0F=`SendMessageA`、0x13=`GetForegroundWindow`、0x1B=`SetWindowTextA`）。用位元組樣式 `B8 xx 00 00 00 E8` 搜尋 `.text` 段得到：
+
+| 函式 | 用到的 DLL 命令 | 功能 |
+|---|---|---|
+| `FUN_004030a9`、`FUN_004033e2` | `SendMessageA`（各 9 處） | 鍵盤訊息：模式 1=`WM_CHAR`、2=SYSKEY 按下＋放開、3=`WM_KEYDOWN`、4=`WM_KEYUP`、5/6=`WM_SYSKEYDOWN/UP`、其他=按下＋放開；可選擇用 `EnumChildWindows` 一併送給子視窗 |
+| `FUN_004019bd`、`FUN_004020d5` | `PostMessageA`（各 9 處） | 同上，PostMessage 版本（`004020d5` 是子視窗回呼） |
+| `FUN_00401274` | `keybd_event`（8 處） | 前景實體按鍵模擬 |
+| `FUN_00403712` | `PostMessageA` | 滑鼠訊息 0x200～0x20A |
+| `FUN_00402405` | `ShowWindowAsync`／`ShowWindow` | 顯示／隱藏視窗 |
+| `FUN_00409614` | `GetForegroundWindow`、`SetWindowTextA` | 修改視窗標題 |
+
+**技能施放 `FUN_00402f45(按鍵, 延遲, 是否點滑鼠)`**（由技能迴圈 `FUN_004025a9` 呼叫，後者是透過執行緒間接啟動的）：
+
+```
+FUN_004030a9(hwnd, vk, 3)                    ; SendMessage WM_KEYDOWN
+延遲 30ms (0x1e)
+FUN_004030a9(hwnd, vk, 4)                    ; SendMessage WM_KEYUP
+if 是否點滑鼠 == 1:
+    x = 視窗寬 / 2.0, y = 視窗高 / 2.0       ; 常數 0x478499 = 2.0，寬高來自 GetClientRect (FUN_00404d46)
+    FUN_00403712(hwnd, x, y, 左鍵, 按下)      ; PostMessage
+    延遲 30ms
+    FUN_00403712(hwnd, x, y, 左鍵, 放開)
+延遲「延遲時間」
+```
+
+**Ctrl+T `FUN_004011c5`**：`keybd_event(Ctrl 按下)` → 50ms → `PostMessage(hwnd, 'T', KEYDOWN)` → 50ms → `PostMessage(hwnd, 'T', KEYUP)` → `keybd_event(Ctrl 放開)`。由「開始」`FUN_004078c4` 呼叫；「停止」`FUN_00407a38` 會在旗標 `DAT_004a7198 == 1` 時呼叫。停止時另外會停掉 4 個執行緒（`DAT_004a7190/71f0/71f4/71ec`），並用 `ShowWindow(hwnd, 1)` 還原遊戲視窗。
+
+**結論：技能鍵和滑鼠是背景送出，只有開始時的 Ctrl+T 用到前景的 `keybd_event`。** `SetForegroundWindow`／`AttachThreadInput` 雖然有匯入，但技能流程沒有用到。
+
 ## 3. CPU 使用率過高的原因
 
 `FUN_00407442` 每次找視窗都要對最多 6,000,000 個可能的視窗代碼逐一呼叫 Win32 API，而且是經由易語言的 DLL 命令分派器間接呼叫，額外開銷更大。多開時要找的視窗變多，掃描就會頻繁觸發，CPU 長時間被佔滿。正確的做法是用 `EnumWindows`，只會列出實際存在的視窗（通常只有幾百個）。
@@ -61,7 +92,9 @@ F1~F6 | 设置1 | 真
 - **`.\1.exe`**：`FUN_004041bf`、`FUN_004096a7` 把這個路徑傳給 `FUN_0040450c`（看起來在做位元組比對或檔案處理）。旁邊緊接著一份內嵌的 96×96 ICO（`0x4784fa` 起，易語言位元組集，長度 0x70BE），被設為某個控制項的圖片。沒有找到寫出或執行 `1.exe` 的直接證據，但也無法排除。
 - **網路**：`WS2_32` 匯入屬於易語言執行環境，沒看到程式邏輯實際使用。
 - **共享記憶體**（`OpenFileMapping`／`MapViewOfFile`）：屬於模組函式組合，沒找到具體用途。
-- **「鼠標」「延遲時間」的確切語意**：只知道一個是勾選框、一個是數字欄位。
+- ~~「鼠標」「延遲時間」的確切語意~~：已在 2.5 確認。
+- **Ctrl+T 在 ECO 裡的用途**：無法從程式本身判斷。
+- **技能迴圈 `FUN_004025a9` 如何排定各技能的「技能時間」**：它是透過執行緒間接呼叫的，這次沒有追進去。
 - 資料區有一段沒被引用的 GBK 粗話字串（`0x4784eb`），可能是未使用的常數。
 
 ## 5. 風險評估

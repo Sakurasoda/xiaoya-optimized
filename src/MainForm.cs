@@ -42,6 +42,9 @@ namespace XiaoYaOpt
         private readonly RadioButton _rbBackground = new RadioButton();
         private readonly RadioButton _rbForeground = new RadioButton();
         private readonly ComboBox _cboButton = new ComboBox();
+        private readonly RadioButton _rbCenter = new RadioButton();
+        private readonly RadioButton _rbCustom = new RadioButton();
+        private readonly CheckBox _chkCtrlT = new CheckBox();
         private readonly NumericUpDown _numX = new NumericUpDown();
         private readonly NumericUpDown _numY = new NumericUpDown();
         private readonly Button _btnCapture = new Button();
@@ -68,7 +71,7 @@ namespace XiaoYaOpt
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
-            ClientSize = new Size(560, 590);
+            ClientSize = new Size(560, 650);
             StartPosition = FormStartPosition.CenterScreen;
 
             BuildUi();
@@ -103,9 +106,9 @@ namespace XiaoYaOpt
             Controls.Add(_grpSlots);
             AddLabel(_grpSlots, "啟用", 14, 24);
             AddLabel(_grpSlots, "按鍵", 70, 24);
-            AddLabel(_grpSlots, "間隔 (毫秒)", 160, 24);
-            AddLabel(_grpSlots, "滑鼠點擊", 290, 24);
-            AddLabel(_grpSlots, "點擊延遲 (毫秒)", 390, 24);
+            AddLabel(_grpSlots, "技能時間 (毫秒)", 160, 24);
+            AddLabel(_grpSlots, "按後點滑鼠", 290, 24);
+            AddLabel(_grpSlots, "延遲時間 (毫秒)", 390, 24);
 
             KeyItem[] keys = BuildKeyList();
             for (int i = 0; i < SlotCount; i++)
@@ -118,7 +121,7 @@ namespace XiaoYaOpt
                 _cboKey[i].SetBounds(70, y, 80, 23);
                 _numInterval[i] = MakeNumber(50, 3600000, 1000);
                 _numInterval[i].SetBounds(160, y, 110, 23);
-                _chkMouse[i] = new CheckBox { Text = "點擊" };
+                _chkMouse[i] = new CheckBox { Text = "點一下" };
                 _chkMouse[i].SetBounds(290, y, 80, 22);
                 _numDelay[i] = MakeNumber(0, 60000, 200);
                 _numDelay[i].SetBounds(390, y, 110, 23);
@@ -126,43 +129,62 @@ namespace XiaoYaOpt
             }
 
             _grpOptions.Text = "選項";
-            _grpOptions.SetBounds(12, 394, 536, 140);
+            _grpOptions.SetBounds(12, 394, 536, 200);
             Controls.Add(_grpOptions);
-            _rbBackground.Text = "背景送出（PostMessage，不搶焦點，多開建議）";
-            _rbBackground.SetBounds(14, 22, 500, 22);
+            // 兩組 RadioButton 需要各自的容器，才不會互相影響。
+            var modePanel = new Panel();
+            modePanel.SetBounds(8, 18, 520, 50);
+            _rbBackground.Text = "背景送出（不搶焦點，同原版，多開建議）";
+            _rbBackground.SetBounds(6, 2, 500, 22);
             _rbForeground.Text = "前景送出（切到視窗 + 模擬實體按鍵，相容性較高但會搶焦點）";
-            _rbForeground.SetBounds(14, 46, 500, 22);
-            _grpOptions.Controls.Add(_rbBackground);
-            _grpOptions.Controls.Add(_rbForeground);
+            _rbForeground.SetBounds(6, 26, 500, 22);
+            modePanel.Controls.Add(_rbBackground);
+            modePanel.Controls.Add(_rbForeground);
+            _grpOptions.Controls.Add(modePanel);
 
-            AddLabel(_grpOptions, "滑鼠", 14, 78);
+            AddLabel(_grpOptions, "滑鼠按鍵", 14, 78);
             _cboButton.DropDownStyle = ComboBoxStyle.DropDownList;
             _cboButton.Items.AddRange(new object[] { "左鍵", "右鍵" });
-            _cboButton.SetBounds(50, 75, 60, 23);
-            AddLabel(_grpOptions, "座標 X", 122, 78);
+            _cboButton.SetBounds(80, 75, 60, 23);
+
+            var clickPanel = new Panel();
+            clickPanel.SetBounds(8, 102, 520, 52);
+            _rbCenter.Text = "點擊位置：遊戲視窗正中央（同原版）";
+            _rbCenter.SetBounds(6, 2, 400, 22);
+            _rbCustom.Text = "自訂";
+            _rbCustom.SetBounds(6, 27, 56, 22);
+            _rbCustom.CheckedChanged += delegate { UpdateClickControls(); };
+            clickPanel.Controls.Add(_rbCenter);
+            clickPanel.Controls.Add(_rbCustom);
+            var lblX = new Label { Text = "X", AutoSize = true, Location = new Point(66, 30) };
             _numX.Maximum = 10000;
-            _numX.SetBounds(170, 75, 65, 23);
-            AddLabel(_grpOptions, "Y", 242, 78);
+            _numX.SetBounds(82, 27, 65, 23);
+            var lblY = new Label { Text = "Y", AutoSize = true, Location = new Point(154, 30) };
             _numY.Maximum = 10000;
-            _numY.SetBounds(258, 75, 65, 23);
+            _numY.SetBounds(170, 27, 65, 23);
             _btnCapture.Text = "擷取座標（3 秒後）";
-            _btnCapture.SetBounds(335, 73, 150, 27);
+            _btnCapture.SetBounds(245, 25, 150, 27);
             _btnCapture.Click += OnCaptureClick;
-            AddLabel(_grpOptions, "多開時每個視窗錯開 (毫秒)", 14, 110);
+            clickPanel.Controls.AddRange(new Control[] { lblX, _numX, lblY, _numY, _btnCapture });
+            _grpOptions.Controls.Add(clickPanel);
+
+            _chkCtrlT.Text = "開始時送出 Ctrl+T（同原版）";
+            _chkCtrlT.SetBounds(14, 164, 230, 22);
+            AddLabel(_grpOptions, "多開時每個視窗錯開 (毫秒)", 260, 167);
             _numStagger.Maximum = 10000;
-            _numStagger.SetBounds(190, 107, 80, 23);
-            _grpOptions.Controls.AddRange(new Control[] { _cboButton, _numX, _numY, _btnCapture, _numStagger });
+            _numStagger.SetBounds(436, 164, 80, 23);
+            _grpOptions.Controls.AddRange(new Control[] { _cboButton, _chkCtrlT, _numStagger });
 
             _btnStart.Text = "開始（Ctrl+F10）";
-            _btnStart.SetBounds(12, 544, 130, 32);
+            _btnStart.SetBounds(12, 604, 130, 32);
             _btnStart.Click += delegate { StartRun(); };
             _btnStop.Text = "停止";
-            _btnStop.SetBounds(150, 544, 80, 32);
+            _btnStop.SetBounds(150, 604, 80, 32);
             _btnStop.Click += delegate { StopRun("已停止"); };
             _btnSave.Text = "儲存設定";
-            _btnSave.SetBounds(238, 544, 90, 32);
+            _btnSave.SetBounds(238, 604, 90, 32);
             _btnSave.Click += delegate { SaveSettings(); _lblStatus.Text = "設定已儲存"; };
-            _lblStatus.SetBounds(338, 548, 214, 40);
+            _lblStatus.SetBounds(338, 606, 214, 40);
             Controls.AddRange(new Control[] { _btnStart, _btnStop, _btnSave, _lblStatus });
         }
 
@@ -292,9 +314,11 @@ namespace XiaoYaOpt
                 Slots = new SlotConfig[SlotCount],
                 Mode = _rbForeground.Checked ? SendMode.Foreground : SendMode.Background,
                 RightButton = _cboButton.SelectedIndex == 1,
+                ClickCenter = !_rbCustom.Checked,
                 ClickX = (int)_numX.Value,
                 ClickY = (int)_numY.Value,
-                StaggerMs = (int)_numStagger.Value
+                StaggerMs = (int)_numStagger.Value,
+                SendCtrlT = _chkCtrlT.Checked
             };
             for (int i = 0; i < SlotCount; i++)
             {
@@ -305,7 +329,7 @@ namespace XiaoYaOpt
                     VirtualKey = key != null ? key.Vk : 0,
                     IntervalMs = (int)_numInterval[i].Value,
                     Mouse = _chkMouse[i].Checked,
-                    MouseDelayMs = (int)_numDelay[i].Value
+                    DelayMs = (int)_numDelay[i].Value
                 };
             }
             return cfg;
@@ -335,6 +359,7 @@ namespace XiaoYaOpt
             Native.ScreenToClient(root, ref p);
             _numX.Value = Math.Max(0, Math.Min(_numX.Maximum, p.X));
             _numY.Value = Math.Max(0, Math.Min(_numY.Maximum, p.Y));
+            _rbCustom.Checked = true;
             _lblStatus.Text = string.Format("已擷取「{0}」內座標 ({1}, {2})", Native.GetTitle(root), p.X, p.Y);
         }
 
@@ -357,9 +382,20 @@ namespace XiaoYaOpt
             _rbForeground.Checked = fg;
             _rbBackground.Checked = !fg;
             _cboButton.SelectedIndex = s.GetBool("mouse.right", false) ? 1 : 0;
+            bool center = s.GetBool("mouse.center", true);
+            _rbCenter.Checked = center;
+            _rbCustom.Checked = !center;
             _numX.Value = Clamp(_numX, s.GetInt("mouse.x", 0));
             _numY.Value = Clamp(_numY, s.GetInt("mouse.y", 0));
             _numStagger.Value = Clamp(_numStagger, s.GetInt("stagger", 50));
+            _chkCtrlT.Checked = s.GetBool("ctrlT", true);
+            UpdateClickControls();
+        }
+
+        private void UpdateClickControls()
+        {
+            _numX.Enabled = _rbCustom.Checked;
+            _numY.Enabled = _rbCustom.Checked;
         }
 
         private void SaveSettings()
@@ -377,6 +413,8 @@ namespace XiaoYaOpt
             }
             s.Set("mode", _rbForeground.Checked ? 1 : 0);
             s.Set("mouse.right", _cboButton.SelectedIndex == 1);
+            s.Set("mouse.center", !_rbCustom.Checked);
+            s.Set("ctrlT", _chkCtrlT.Checked);
             s.Set("mouse.x", (int)_numX.Value);
             s.Set("mouse.y", (int)_numY.Value);
             s.Set("stagger", (int)_numStagger.Value);

@@ -37,6 +37,12 @@ namespace XiaoYaOpt
         public static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll")]
+        public static extern bool SendNotifyMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+
+        [DllImport("user32.dll")]
         public static extern uint MapVirtualKeyW(uint code, uint mapType);
 
         [DllImport("user32.dll")]
@@ -102,12 +108,22 @@ namespace XiaoYaOpt
         public const uint MOUSEEVENTF_RIGHTUP = 0x0010;
 
         public const uint MOD_CONTROL = 0x0002;
+        public const int VK_CONTROL = 0x11;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT
         {
             public int X;
             public int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
         }
 
         [StructLayout(LayoutKind.Sequential)]
