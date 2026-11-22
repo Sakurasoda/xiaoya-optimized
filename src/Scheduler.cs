@@ -62,6 +62,12 @@ namespace XiaoYaOpt
 
         private const int PressMs = 30;
         private const int MinIntervalMs = 50;
+        /// <summary>背景點擊時滑鼠按住的時間（要讓遊戲至少跑過一幀才會認到）。</summary>
+        private const int ClickHoldMs = 100;
+        /// <summary>放開後游標再停留的時間，讓遊戲處理完放開才把游標移回去。</summary>
+        private const int ClickSettleMs = 60;
+        /// <summary>判斷「游標還在我們放的位置」時容許的誤差（像素）。</summary>
+        private const int CursorSlackPx = 8;
 
         private readonly RunConfig _cfg;
         private readonly List<IntPtr> _windows;
@@ -244,7 +250,7 @@ namespace XiaoYaOpt
                         Interlocked.Increment(ref _sent);
 
                         long pressEnd = now + (_cfg.Mode == SendMode.Background
-                            ? PressMs + (slot.Mouse ? PressMs : 0)
+                            ? PressMs + (slot.Mouse ? ClickHoldMs + ClickSettleMs : 0)
                             : 0);
                         _busyUntil[job.Hwnd] = pressEnd + Math.Max(0, slot.DelayMs);
 
@@ -261,8 +267,7 @@ namespace XiaoYaOpt
                     break;
 
                 case JobKind.MouseDown:
-                    PostMouse(job.Hwnd, false);
-                    Add(now + PressMs, job.Hwnd, job.Slot, JobKind.MouseUp);
+                    ClickWithCursor(job.Hwnd);
                     break;
 
                 case JobKind.MouseUp:
@@ -305,6 +310,33 @@ namespace XiaoYaOpt
                 return new Native.POINT { X = rc.Right / 2, Y = rc.Bottom / 2 };
             }
             return new Native.POINT { X = _cfg.ClickX, Y = _cfg.ClickY };
+        }
+
+        /// <summary>
+        /// 背景點擊。eco.exe 每一幀用 GetCursorPos 讀實體游標（FUN_0054e380）：
+        /// 實體游標在遊戲視窗範圍內時，才採用點擊訊息帶來的座標；不在範圍內就改用實體游標的位置，
+        /// 背景送出的點擊等於點到視窗外面。所以點擊前先把游標移到目標位置，送完再移回原處。
+        /// 遊戲只比對座標，視窗被其他視窗蓋住也沒關係；按住一段時間，讓遊戲至少跑過一幀。
+        /// </summary>
+        private void ClickWithCursor(IntPtr hwnd)
+        {
+            Native.POINT target = ClickPoint(hwnd);
+            Native.ClientToScreen(hwnd, ref target);
+            Native.POINT saved;
+            bool haveSaved = Native.GetCursorPos(out saved);
+
+            Native.SetCursorPos(target.X, target.Y);
+            PostMouse(hwnd, false);
+            Thread.Sleep(ClickHoldMs);
+            PostMouse(hwnd, true);
+            Thread.Sleep(ClickSettleMs);
+
+            // 使用者在這段時間內自己移動了滑鼠，就不要把游標拉回去。
+            // 螢幕有縮放時，讀回的游標座標會和設定值差 1～2 像素，所以容許一點誤差。
+            Native.POINT now;
+            if (haveSaved && Native.GetCursorPos(out now)
+                && Math.Abs(now.X - target.X) <= CursorSlackPx && Math.Abs(now.Y - target.Y) <= CursorSlackPx)
+                Native.SetCursorPos(saved.X, saved.Y);
         }
 
         private void PostMouse(IntPtr hwnd, bool up)
