@@ -23,9 +23,15 @@ namespace XiaoYaOpt
         private sealed class WindowItem
         {
             public IntPtr Hwnd;
+            /// <summary>目前的視窗標題（可能已被小雅改成「eco - 角色設定」）。</summary>
             public string Title;
+            /// <summary>遊戲原本的標題（去掉小雅加上的「 - 角色設定」）。</summary>
+            public string BaseTitle;
             public uint Pid;
         }
+
+        /// <summary>小雅加在遊戲視窗標題後面的分隔字串：「eco - 本尊」。</summary>
+        private const string TitleSeparator = " - ";
 
         // 視窗清單
         private readonly TextBox _txtKeyword = new TextBox();
@@ -398,12 +404,13 @@ namespace XiaoYaOpt
                 if (keyword.Length > 0 && title.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) < 0) return true;
                 uint pid;
                 Native.GetWindowThreadProcessId(h, out pid);
-                found.Add(new WindowItem { Hwnd = h, Title = title, Pid = pid });
+                string fromTitle;
+                found.Add(new WindowItem { Hwnd = h, Title = title, BaseTitle = SplitTitle(title, out fromTitle), Pid = pid });
                 return true;
             }, IntPtr.Zero);
 
             // 遊戲視窗的標題通常都是「eco」，多開時會重複；標題重複時不能用標題記憶，否則每個視窗都會變成同一個角色設定。
-            var titleCount = found.GroupBy(x => x.Title).ToDictionary(x => x.Key, x => x.Count());
+            var titleCount = found.GroupBy(x => x.BaseTitle).ToDictionary(x => x.Key, x => x.Count());
 
             RefreshProfileColumn();
             _grid.Rows.Clear();
@@ -412,13 +419,46 @@ namespace XiaoYaOpt
                 string profile;
                 if (!keepProfile.TryGetValue(w.Hwnd, out profile) || _store.Find(profile) == null)
                 {
-                    if (titleCount[w.Title] > 1 || !_assignByTitle.TryGetValue(w.Title, out profile) || _store.Find(profile) == null)
+                    // 小雅之前改過的標題（「eco - 本尊」）直接帶出角色設定：小雅重開時也認得出來
+                    string fromTitle;
+                    SplitTitle(w.Title, out fromTitle);
+                    if (fromTitle != null) profile = fromTitle;
+                    else if (titleCount[w.BaseTitle] > 1 || !_assignByTitle.TryGetValue(w.BaseTitle, out profile) || _store.Find(profile) == null)
                         profile = ProfileStore.DefaultName;
                 }
                 int idx = _grid.Rows.Add(keepChecked.Contains(w.Hwnd), w.Title, w.Pid.ToString(), _store.Find(profile).Name);
                 _grid.Rows[idx].Tag = w;
+                ApplyWindowTitle(_grid.Rows[idx]);
             }
             _lblStatus.Text = string.Format("找到 {0} 個視窗", found.Count);
+        }
+
+        /// <summary>
+        /// 拆開「eco - 本尊」：回傳遊戲原本的標題，profile 為標題中的角色設定名稱（不是現有角色設定時為 null）。
+        /// </summary>
+        private string SplitTitle(string title, out string profile)
+        {
+            profile = null;
+            int i = title.LastIndexOf(TitleSeparator, StringComparison.Ordinal);
+            if (i <= 0) return title;
+            var p = _store.Find(title.Substring(i + TitleSeparator.Length));
+            if (p == null) return title;
+            profile = p.Name;
+            return title.Substring(0, i);
+        }
+
+        /// <summary>把遊戲視窗標題改成「原標題 - 角色設定」（預設則恢復原標題），方便在工作列分辨角色。</summary>
+        private void ApplyWindowTitle(DataGridViewRow row)
+        {
+            var w = row.Tag as WindowItem;
+            if (w == null || !Native.IsWindow(w.Hwnd)) return;
+            string profile = Convert.ToString(row.Cells[_colProfile.Index].Value);
+            string want = string.IsNullOrEmpty(profile) || profile == ProfileStore.DefaultName
+                ? w.BaseTitle
+                : w.BaseTitle + TitleSeparator + profile;
+            if (Native.GetTitle(w.Hwnd) != want) Native.SetWindowTextW(w.Hwnd, want);
+            w.Title = want;
+            row.Cells[_colTitle.Index].Value = want;
         }
 
         private void RefreshProfileColumn()
@@ -439,9 +479,10 @@ namespace XiaoYaOpt
             var row = _grid.Rows[e.RowIndex];
             var w = row.Tag as WindowItem;
             if (w == null) return;
-            // 只有標題唯一時才記住「視窗標題 → 角色設定」，供重開小雅時自動套用。
-            int same = _grid.Rows.Cast<DataGridViewRow>().Count(r => r.Tag is WindowItem && ((WindowItem)r.Tag).Title == w.Title);
-            if (same == 1) _assignByTitle[w.Title] = Convert.ToString(row.Cells[_colProfile.Index].Value);
+            ApplyWindowTitle(row);
+            // 只有原標題唯一時才記住「視窗標題 → 角色設定」，供遊戲重開後自動套用。
+            int same = _grid.Rows.Cast<DataGridViewRow>().Count(r => r.Tag is WindowItem && ((WindowItem)r.Tag).BaseTitle == w.BaseTitle);
+            if (same == 1) _assignByTitle[w.BaseTitle] = Convert.ToString(row.Cells[_colProfile.Index].Value);
         }
 
         // =====================================================================
