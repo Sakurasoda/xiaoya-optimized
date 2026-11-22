@@ -76,7 +76,11 @@ namespace XiaoYaOpt
         public int Count { get { return _byKey.Count; } }
         public string Path { get; private set; }
 
-        public static SkillDb Load(string path)
+        /// <summary>
+        /// 讀取技能時間表。gameNames（技能 ID → 名稱，來自使用者的遊戲資料夾）有值時，顯示名稱以它為準；
+        /// 沒有時用表內的「中文名稱」欄（只有本機完整技能表才有），再沒有就用英文名。
+        /// </summary>
+        public static SkillDb Load(string path, IDictionary<uint, string> gameNames = null)
         {
             var db = new SkillDb { Path = path };
             using (var reader = new StreamReader(path, Encoding.UTF8, true))
@@ -89,8 +93,8 @@ namespace XiaoYaOpt
                     cType = header.IndexOf("類型"), cJob = header.IndexOf("職業"), cJobLv = header.IndexOf("習得職業等級"),
                     cJp = header.IndexOf("日文名稱"), cPossess = header.IndexOf("憑依時使用");
                 var entries = new Dictionary<string, Dictionary<string, SkillEntry>>(); // job -> nameKey -> entry
-                if (cLv < 0 || cZh < 0 || cOrig < 0 || cWikiEn < 0 || cCast < 0 || cCd < 0 || cDur < 0)
-                    throw new InvalidDataException("技能表缺少必要欄位（等級、中文名稱、原文名稱、官網英文名、詠唱/冷卻/持續時間）");
+                if (cId < 0 || cLv < 0 || cWikiEn < 0 || cCast < 0 || cCd < 0 || cDur < 0)
+                    throw new InvalidDataException("技能表缺少必要欄位（技能ID、等級、官網英文名、詠唱/冷卻/持續時間）");
 
                 List<string> row;
                 while ((row = ReadRow(reader)) != null)
@@ -98,10 +102,16 @@ namespace XiaoYaOpt
                     if (row.Count < header.Count) continue;
                     int lv;
                     if (!int.TryParse(row[cLv], out lv)) continue;
+                    uint id;
+                    uint.TryParse(row[cId], out id);
+                    string orig = cOrig >= 0 ? row[cOrig] : "";
+                    string gameName;
+                    string zh = gameNames != null && gameNames.TryGetValue(id, out gameName) ? gameName
+                        : cZh >= 0 ? row[cZh].Trim() : "";
                     var info = new SkillInfo
                     {
-                        ZhName = row[cZh],
-                        EnName = row[cWikiEn].Length > 0 ? row[cWikiEn] : row[cOrig],
+                        ZhName = zh,
+                        EnName = row[cWikiEn].Length > 0 ? row[cWikiEn] : orig,
                         Level = lv,
                         CastSec = ParseSec(row[cCast]),
                         CooldownSec = ParseSec(row[cCd]),
@@ -113,19 +123,17 @@ namespace XiaoYaOpt
 
                     // 官網英文名與遊戲原文名都建索引；有官網時間資料的列優先。
                     db.Add(row[cWikiEn], lv, info);
-                    db.Add(row[cOrig], lv, info);
+                    db.Add(orig, lv, info);
 
                     // 依技能 ID 索引（副職業表用 ID 對應）
-                    uint id = 0;
-                    if (cId >= 0 && uint.TryParse(row[cId], out id))
+                    if (id != 0)
                     {
                         SkillEntry byId;
                         if (!db._byId.TryGetValue(id, out byId))
                             db._byId[id] = byId = new SkillEntry
                             {
                                 Id = id, Type = info.Type, JpName = cJp >= 0 ? row[cJp].Trim() : "",
-                                EnName = row[cWikiEn].Length > 0 ? row[cWikiEn] : row[cOrig],
-                                ZhName = row[cZh].Trim(), PossessUsable = possess
+                                EnName = info.EnName, ZhName = zh, PossessUsable = possess
                             };
                         if (!byId.Levels.ContainsKey(lv)) byId.Levels[lv] = info;
                     }
@@ -146,7 +154,7 @@ namespace XiaoYaOpt
                         if (!map.TryGetValue(nk, out e))
                             map[nk] = e = new SkillEntry
                             {
-                                Id = id, EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type,
+                                Id = id, EnName = row[cWikiEn], ZhName = zh, JobLevel = jobLv, Type = info.Type,
                                 JpName = cJp >= 0 ? row[cJp].Trim() : "", PossessUsable = possess
                             };
                         if (!e.Levels.ContainsKey(lv)) e.Levels[lv] = info;

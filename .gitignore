@@ -4,3 +4,4 @@ obj/
 *.pdb
 *.cfg
 assets/
+dist/

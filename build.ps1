@@ -20,6 +20,10 @@ if (Test-Path $ico) { $iconArgs = @("/win32icon:$ico") }
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 Write-Host "Built: $exe"
 
+# Skill timing table shipped with the app (wiki data only; skill names are read from the game folder at run time)
+Copy-Item (Join-Path $root 'data\*.csv') $out -Force
+Write-Host "Copied: data\*.csv"
+
 # Archive extractor (command line): unpacks ECO .hed/.dat archives
 $tool = Join-Path $out 'XlsExtract.exe'
 & $csc /nologo /target:exe /optimize+ /codepage:65001 "/out:$tool" (Join-Path $root 'tools\XlsExtract.cs') (Join-Path $src 'EcoArchive.cs')

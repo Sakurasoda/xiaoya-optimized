@@ -507,7 +507,9 @@ namespace XiaoYaOpt
             _btnAddSlot.Enabled = p.Slots.Count < Profile.MaxSlots;
             _lblSlotCount.Text = string.Format("共 {0} 格（{1}～{2} 格）", p.Slots.Count, Profile.MinSlots, Profile.MaxSlots);
             _lblHint.Text = _db == null
-                ? "找不到技能表：把 技能表.csv 放在 XiaoYaOpt.exe 旁邊後重新開啟，就能依職業選擇技能並自動帶入時間。"
+                ? "找不到技能時間表：請確認 " + SkillTableFile + " 和 XiaoYaOpt.exe 放在同一個資料夾，再重新開啟。"
+                : !_dbHasGameNames
+                ? "找不到遊戲資料夾，技能名稱先顯示英文：請先開啟遊戲再重新開啟小雅（選副職業時也可以直接指定遊戲資料夾）。"
                 : "選好職業後，在「技能」欄挑選技能與等級，技能時間和延遲時間會自動帶入（仍可手動修改）。";
             _loadingEditor = false;
         }
@@ -886,6 +888,8 @@ namespace XiaoYaOpt
                 }
             }
             LoadIcons();
+            // 遊戲資料夾是現在才找到的：重新載入技能表，讓技能名稱改用遊戲裡的名稱
+            if (_db != null && !_dbHasGameNames) LoadSkillDb();
             try
             {
                 _dj = DualJobDb.Load(_gameDir);
@@ -945,20 +949,31 @@ namespace XiaoYaOpt
             RefreshProfileCombo(_current);
         }
 
-        /// <summary>載入 exe 旁邊的「技能表.csv」（找不到時再找與 repo 同層的「技能資料」資料夾）。</summary>
+        /// <summary>隨程式發布的技能時間表（官網的時間資料，不含遊戲文字）。</summary>
+        public const string SkillTableFile = "技能時間表.csv";
+
+        /// <summary>
+        /// 載入 exe 旁邊的「技能時間表.csv」（找不到時用本機自己產生的完整「技能表.csv」）。
+        /// 技能名稱從遊戲資料夾的 effect.ssp 讀取，所以有裝中文化的人會看到中文。
+        /// </summary>
         private void LoadSkillDb()
         {
             _db = null;
             string path = new[]
             {
+                Path.Combine(_baseDir, SkillTableFile),
                 Path.Combine(_baseDir, "技能表.csv"),
-                Path.GetFullPath(Path.Combine(_baseDir, @"..\..\技能資料\技能表.csv")),
-                Path.GetFullPath(Path.Combine(_baseDir, @"..\技能資料\技能表.csv"))
+                Path.GetFullPath(Path.Combine(_baseDir, @"..\data\" + SkillTableFile))
             }.FirstOrDefault(File.Exists);
             if (path == null) return;
-            try { _db = SkillDb.Load(path); }
+            var names = GameSkillNames.Load(_gameDir);
+            _dbHasGameNames = names.Count > 0;
+            try { _db = SkillDb.Load(path, names); }
             catch (Exception ex) { _lblStatus.Text = "技能表讀取失敗：" + ex.Message; }
         }
+
+        /// <summary>技能名稱是否已經從遊戲資料夾讀到（沒有的話只能顯示英文名）。</summary>
+        private bool _dbHasGameNames;
 
         // =====================================================================
         // 開始 / 停止
@@ -1090,8 +1105,8 @@ namespace XiaoYaOpt
             foreach (string k in s.Keys())
                 if (k.StartsWith("assign.", StringComparison.Ordinal)) _assignByTitle[k.Substring(7)] = s.Get(k, "");
 
+            EnsureDualJobData(false); // 先找出遊戲資料夾（技能名稱、副職業表、圖示都從那裡讀）
             LoadSkillDb();
-            EnsureDualJobData(false);
             _store.Load();
             MigrateOldSlots(s);
             _current = _store.Find(s.Get("profile", ProfileStore.DefaultName)) ?? _store.Find(ProfileStore.DefaultName);

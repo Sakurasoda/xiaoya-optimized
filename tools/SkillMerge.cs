@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 // Merge Nekogame wiki skill pages (cast time, cooldown, ...) into the client skill table.
 // args: gameSsp zhSsp jpSsp wikiHtmlDir outCsv [specialSkillsCsv]
 //   or: --special existingTable.csv specialSkillsCsv outCsv   (patch special skills into an existing table)
+//   or: --publish existingTable.csv out技能時間表.csv          (strip to wiki-only columns for distribution)
 static class SkillMerge
 {
     const int RecBase = 0x30000, RecSize = 728;
@@ -158,6 +159,42 @@ static class SkillMerge
         return res;
     }
 
+    /// <summary>發布用的欄位：只有官網（與 lycolia Wiki）的資料，不含遊戲文字（中文名稱、說明、客戶端 MP/SP）。</summary>
+    static readonly string[] PublishColumns =
+    {
+        "技能ID", "等級", "官網英文名", "日文名稱", "類型", "詠唱時間(秒)", "冷卻時間(秒)", "持續時間(秒)",
+        "職業", "習得職業等級", "憑依時使用"
+    };
+
+    /// <summary>
+    /// 發布模式：把本機的完整技能表精簡成可以放進 repo、隨程式發布的「技能時間表.csv」。
+    /// 只留官網有資料（或特殊技能表）的列；只在特殊技能表裡的技能沒有官網英文名，改用 Wiki 的日文名稱當代號。
+    /// 技能名稱由 XiaoYaOpt 執行時從使用者自己的遊戲資料夾讀取。
+    /// </summary>
+    static void Publish(string inCsv, string outCsv)
+    {
+        var lines = File.ReadAllLines(inCsv, Encoding.UTF8);
+        var header = ParseCsvLine(lines[0]);
+        var idx = PublishColumns.Select(c => header.IndexOf(c)).ToArray();
+        for (int i = 0; i < idx.Length; i++)
+            if (idx[i] < 0 && PublishColumns[i] != "憑依時使用") throw new InvalidDataException("技能表缺少欄位：" + PublishColumns[i]);
+        int cEn = header.IndexOf("官網英文名"), cJp = header.IndexOf("日文名稱"), cHow = header.IndexOf("官網對應方式"), cId = header.IndexOf("技能ID");
+        int rows = 0;
+        using (var wr = new StreamWriter(outCsv, false, new UTF8Encoding(true)))
+        {
+            wr.WriteLine(string.Join(",", PublishColumns));
+            for (int i = 1; i < lines.Length; i++)
+            {
+                var r = ParseCsvLine(lines[i]);
+                if (r.Count < header.Count || r[cEn].Length == 0 || r[cId].Length == 0) continue;
+                if (cHow >= 0 && r[cHow] == "特殊技能表") r[cEn] = r[cJp];
+                wr.WriteLine(string.Join(",", idx.Select(c => Csv(c < 0 ? "" : r[c]))));
+                rows++;
+            }
+        }
+        Console.WriteLine("published rows: {0}", rows);
+    }
+
     /// <summary>
     /// 補入模式：在既有的技能表上補入特殊技能（不需要原版遊戲檔，例如遊戲已換成中文化 effect.ssp 時）。
     /// 依日文名稱對應技能 ID（同名多個時取最小 ID），把職業加上 special 並補上空白的時間欄位與「憑依時使用」欄。
@@ -232,6 +269,11 @@ static class SkillMerge
         if (args.Length == 4 && args[0] == "--special")
         {
             PatchSpecial(args[1], args[2], args[3]);
+            return;
+        }
+        if (args.Length == 3 && args[0] == "--publish")
+        {
+            Publish(args[1], args[2]);
             return;
         }
         byte[] g = File.ReadAllBytes(args[0]), zh = File.ReadAllBytes(args[1]), jp = File.ReadAllBytes(args[2]);
