@@ -62,12 +62,24 @@ namespace XiaoYaOpt
             new object[] { 12, "商人系 Merchant",   new[] { "merchant", "trader", "gambler", "royal-dealer" } },
         };
 
-        /// <summary>副職業選單用：「（無）」＋12 個副職業體系。Slug 存的是體系 ID（字串）。</summary>
+        /// <summary>
+        /// 副職業選單用：「（無）」＋12 個副職業體系，顯示方式和主職業相同（例如「ER  抹消者（盜賊系）」）。
+        /// Slug 存的是體系 ID（字串）。
+        /// </summary>
         public static List<JobInfo> SubJobChoices()
         {
             var list = new List<JobInfo> { new JobInfo { Slug = "", Display = "（無）" } };
             foreach (var row in DualJobTable)
-                list.Add(new JobInfo { Slug = ((int)row[0]).ToString(), Display = (string)row[1] });
+            {
+                var members = (string[])row[2];
+                string display = (string)row[1];
+                foreach (var line in LineTable)
+                {
+                    var m = (string[])line[2];
+                    if (m[m.Length - 1] == members[members.Length - 1]) { display = (string)line[0] + "  " + (string)line[1]; break; }
+                }
+                list.Add(new JobInfo { Slug = ((int)row[0]).ToString(), Display = display });
+            }
             return list;
         }
 

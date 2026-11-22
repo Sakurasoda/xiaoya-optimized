@@ -227,7 +227,7 @@ namespace XiaoYaOpt
             AddLabel(_grpProfile, "副職業", 226, 59);
             _cboSubJob.DropDownStyle = ComboBoxStyle.DropDownList;
             _cboSubJob.SetBounds(274, 56, 150, 23);
-            _cboSubJob.DropDownWidth = 200;
+            _cboSubJob.DropDownWidth = 220;
             _cboSubJob.MaxDropDownItems = 20;
             foreach (var j in Jobs.SubJobChoices()) _cboSubJob.Items.Add(j);
             _cboSubJob.SelectedIndexChanged += OnJobChanged;
