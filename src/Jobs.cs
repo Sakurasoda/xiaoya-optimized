@@ -91,7 +91,10 @@ namespace XiaoYaOpt
             return "";
         }
 
-        /// <summary>主職業選單：「（全部職業）」＋各職業線（例如「ER  抹消者（盜賊系）」）。</summary>
+        /// <summary>主職業選單裡的「特殊技能」：不屬於任何職業的技能（裝備、夥伴、傀儡、地圖…），與技能表「職業」欄的 special 相同。</summary>
+        public const string SpecialSlug = "special";
+
+        /// <summary>主職業選單：「（全部職業）」＋各職業線（例如「ER  抹消者（盜賊系）」）＋「特殊技能」。</summary>
         public static List<JobInfo> All()
         {
             var list = new List<JobInfo> { new JobInfo { Slug = AllSlug, Display = "（全部職業）" } };
@@ -100,6 +103,7 @@ namespace XiaoYaOpt
                 var m = (string[])row[2];
                 list.Add(new JobInfo { Slug = m[m.Length - 1], Display = (string)row[0] + "  " + (string)row[1] });
             }
+            list.Add(new JobInfo { Slug = SpecialSlug, Display = "特殊技能" });
             return list;
         }
 

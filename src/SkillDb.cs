@@ -51,8 +51,6 @@ namespace XiaoYaOpt
     /// </summary>
     internal sealed class SkillDb
     {
-        /// <summary>技能表「職業」欄裡代表特殊技能（不屬於任何職業）的代號。</summary>
-        public const string SpecialSlug = "special";
         private readonly Dictionary<string, SkillInfo> _byKey = new Dictionary<string, SkillInfo>();
         /// <summary>職業代號 → 該職業的技能（依習得職業等級排序，不含被動技能）。空字串代表全部職業。</summary>
         private readonly Dictionary<string, List<SkillEntry>> _byJob = new Dictionary<string, List<SkillEntry>>();
