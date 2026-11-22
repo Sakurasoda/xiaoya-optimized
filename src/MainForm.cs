@@ -802,18 +802,13 @@ namespace XiaoYaOpt
                 _lblHint.Text = "沒有載入副職業表（需要遊戲資料夾），所以先不套用副職業。";
                 return;
             }
-            // 不屬於主職業或副職業的技能清掉並停用，避免誤送（憑依過濾只影響清單顯示，不會清掉已選的技能）。
+            // 換職業不清除已選的技能（只是清單換了）：不在新清單裡的技能照樣保留在原格子，設定不會遺失。
             var choices = ChoicesFor(_current);
-            int cleared = 0;
+            int kept = 0;
             if (_db != null)
             {
                 var names = new HashSet<string>(ChoicesFor(_current, false).Select(x => Normalize(x.Entry.EnName)));
-                foreach (var d in _current.Slots)
-                {
-                    if (string.IsNullOrEmpty(d.SkillName) || names.Contains(Normalize(d.SkillName))) continue;
-                    d.SkillName = ""; d.SkillLevel = 0; d.SkillLabel = ""; d.Enabled = false;
-                    cleared++;
-                }
+                kept = _current.Slots.Count(d => !string.IsNullOrEmpty(d.SkillName) && !names.Contains(Normalize(d.SkillName)));
             }
             var levelsBefore = _current.Slots.Select(d => d.SkillLevel).ToArray();
             ProfileToEditor(_current);
@@ -834,7 +829,7 @@ namespace XiaoYaOpt
                     _current.SubJobLevel > 0 ? " Lv" + _current.SubJobLevel : "", choices.Count, mainCount, subCount)
                 : string.Format("{0}：可選 {1} 個技能", job.Display, mainCount);
             _lblHint.Text = what + "。"
-                + (cleared > 0 ? string.Format("{0} 格技能已不可用，已清除並停用。", cleared) : "")
+                + (kept > 0 ? string.Format("{0} 格的技能不屬於目前的職業，已保留原設定。", kept) : "")
                 + (lowered > 0 ? string.Format("{0} 格技能等級超過副職業上限，已降級並重算時間。", lowered) : "");
         }
 
