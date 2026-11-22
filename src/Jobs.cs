@@ -5,7 +5,7 @@ namespace XiaoYaOpt
 {
     internal sealed class JobInfo
     {
-        /// <summary>官網網址代號，與技能表「職業」欄相同，例如 blacksmith。</summary>
+        /// <summary>主職業：職業線的最終職業官網代號（例如 maestro）；副職業：體系 ID。</summary>
         public string Slug;
         public string Display;
         public override string ToString() { return Display; }
@@ -13,66 +13,33 @@ namespace XiaoYaOpt
 
     /// <summary>
     /// Nekogame 官網的職業清單（依官網選單順序）。
-    /// 中文名稱是常見譯名，不一定與台版用語完全一致，所以同時顯示英文。
+    /// 主職業以「職業線」為單位，用最終職業的縮寫表示；技能清單包含整條線的技能。
     /// </summary>
     internal static class Jobs
     {
         public const string AllSlug = "";
 
-        private static readonly string[,] Table =
+        /// <summary>
+        /// 職業線：縮寫、顯示名稱、線上的職業（基本→進階→技術→最終職業）。
+        /// 縮寫取自官網選單，鷹眼官網沒有標示，用玩家慣用的 HAW。
+        /// </summary>
+        private static readonly object[][] LineTable =
         {
-            { "",                "（全部職業）" },
-            { "swordsman",       "劍士 Swordsman" },
-            { "blade-master",    "劍聖 Blade Master" },
-            { "bounty-hunter",   "賞金獵人 Bounty Hunter" },
-            { "gladiator",       "劍鬥士 Gladiator" },
-            { "fencer",          "騎士 Fencer" },
-            { "knight",          "聖騎士 Knight" },
-            { "dark-stalker",    "暗黑騎士 Dark Stalker" },
-            { "guardian",        "守護者 Guardian" },
-            { "scout",           "盜賊 Scout" },
-            { "assassin",        "刺客 Assassin" },
-            { "commando",        "突擊兵 Commando" },
-            { "eraser",          "抹消者 Eraser" },
-            { "archer",          "弓箭手 Archer" },
-            { "striker",         "狙擊手 Striker" },
-            { "gunner",          "槍手 Gunner" },
-            { "hawkeye",         "鷹眼 Hawkeye" },
-            { "wizard",          "魔法師 Wizard" },
-            { "sorcerer",        "巫師 Sorcerer" },
-            { "sage",            "賢者 Sage" },
-            { "force-master",    "力量大師 Force Master" },
-            { "shaman",          "元素師 Shaman" },
-            { "elementalist",    "精靈使 Elementalist" },
-            { "enchanter",       "附魔師 Enchanter" },
-            { "astralist",       "星靈使 Astralist" },
-            { "vates",           "祭司 Vates" },
-            { "druid",           "德魯伊 Druid" },
-            { "bard",            "吟遊詩人 Bard" },
-            { "cardinal",        "樞機主教 Cardinal" },
-            { "warlock",         "術士 Warlock" },
-            { "cabalist",        "秘術士 Cabalist" },
-            { "necromancer",     "死靈法師 Necromancer" },
-            { "soultaker",       "靈魂收割者 Soul Taker" },
-            { "miner",           "礦工 Miner" },
-            { "blacksmith",      "鐵匠 Blacksmith" },
-            { "engineer",        "工程師 Engineer" },
-            { "maestro",         "大師 Maestro" },
-            { "farmer",          "農夫 Farmer" },
-            { "alchemist",       "鍊金術士 Alchemist" },
-            { "marionettist",    "傀儡師 Marionettist" },
-            { "harvester",       "收穫者 Harvester" },
-            { "ranger",          "遊俠 Ranger" },
-            { "explorer",        "探險家 Explorer" },
-            { "treasure-hunter", "寶藏獵人 Treasure Hunter" },
-            { "strider",         "漫遊者 Strider" },
-            { "merchant",        "商人 Merchant" },
-            { "trader",          "貿易商 Trader" },
-            { "gambler",         "賭徒 Gambler" },
-            { "royal-dealer",    "皇家商人 Royal Dealer" },
-            { "breeder",         "馴獸師 Breeder" },
-            { "gardener",        "園藝師 Gardener" },
-            { "joker",           "小丑 Joker" },
+            new object[] { "GL",  "劍鬥士（劍士系）",     new[] { "swordsman", "blade-master", "bounty-hunter", "gladiator" } },
+            new object[] { "GU",  "守護者（騎士系）",     new[] { "fencer", "knight", "dark-stalker", "guardian" } },
+            new object[] { "ER",  "抹消者（盜賊系）",     new[] { "scout", "assassin", "commando", "eraser" } },
+            new object[] { "HAW", "鷹眼（弓箭手系）",     new[] { "archer", "striker", "gunner", "hawkeye" } },
+            new object[] { "FO",  "力量大師（魔法師系）", new[] { "wizard", "sorcerer", "sage", "force-master" } },
+            new object[] { "AS",  "星靈使（元素師系）",   new[] { "shaman", "elementalist", "enchanter", "astralist" } },
+            new object[] { "CA",  "樞機主教（祭司系）",   new[] { "vates", "druid", "bard", "cardinal" } },
+            new object[] { "SO",  "靈魂收割者（術士系）", new[] { "warlock", "cabalist", "necromancer", "soultaker" } },
+            new object[] { "MA",  "大師（礦工系）",       new[] { "miner", "blacksmith", "engineer", "maestro" } },
+            new object[] { "HA",  "收穫者（農夫系）",     new[] { "farmer", "alchemist", "marionettist", "harvester" } },
+            new object[] { "ST",  "漫遊者（遊俠系）",     new[] { "ranger", "explorer", "treasure-hunter", "strider" } },
+            new object[] { "RO",  "皇家商人（商人系）",   new[] { "merchant", "trader", "gambler", "royal-dealer" } },
+            new object[] { "JO",  "小丑",                 new[] { "joker" } },
+            new object[] { "BR",  "馴獸師",               new[] { "breeder" } },
+            new object[] { "GA",  "園藝師",               new[] { "gardener" } },
         };
 
         /// <summary>
@@ -112,11 +79,38 @@ namespace XiaoYaOpt
             return "";
         }
 
+        /// <summary>主職業選單：「（全部職業）」＋各職業線（例如「ER  抹消者（盜賊系）」）。</summary>
         public static List<JobInfo> All()
         {
-            var list = new List<JobInfo>();
-            for (int i = 0; i < Table.GetLength(0); i++) list.Add(new JobInfo { Slug = Table[i, 0], Display = Table[i, 1] });
+            var list = new List<JobInfo> { new JobInfo { Slug = AllSlug, Display = "（全部職業）" } };
+            foreach (var row in LineTable)
+            {
+                var m = (string[])row[2];
+                list.Add(new JobInfo { Slug = m[m.Length - 1], Display = (string)row[0] + "  " + (string)row[1] });
+            }
             return list;
+        }
+
+        /// <summary>職業線（Key = 最終職業代號）與線上的所有職業（基本職業在前）。</summary>
+        public static IEnumerable<KeyValuePair<string, string[]>> Lines()
+        {
+            foreach (var row in LineTable)
+            {
+                var m = (string[])row[2];
+                yield return new KeyValuePair<string, string[]>(m[m.Length - 1], m);
+            }
+        }
+
+        /// <summary>任一職業代號 → 所屬職業線（最終職業代號）。舊版設定存的是單一職業，用這個轉換。</summary>
+        public static string LineOf(string slug)
+        {
+            if (string.IsNullOrEmpty(slug)) return AllSlug;
+            foreach (var row in LineTable)
+            {
+                var m = (string[])row[2];
+                if (Array.IndexOf(m, slug) >= 0) return m[m.Length - 1];
+            }
+            return slug;
         }
     }
 }

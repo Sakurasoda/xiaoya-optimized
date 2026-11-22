@@ -52,6 +52,8 @@ namespace XiaoYaOpt
         private readonly Dictionary<string, SkillInfo> _byKey = new Dictionary<string, SkillInfo>();
         /// <summary>職業代號 → 該職業的技能（依習得職業等級排序，不含被動技能）。空字串代表全部職業。</summary>
         private readonly Dictionary<string, List<SkillEntry>> _byJob = new Dictionary<string, List<SkillEntry>>();
+        /// <summary>職業線（最終職業代號）→ 整條線的技能，依基本→最終職業、再依習得等級排序。</summary>
+        private readonly Dictionary<string, List<SkillEntry>> _byLine = new Dictionary<string, List<SkillEntry>>();
         /// <summary>技能 ID → 技能（含官網沒有資料、只有客戶端資料的技能）。</summary>
         private readonly Dictionary<uint, SkillEntry> _byId = new Dictionary<uint, SkillEntry>();
 
@@ -65,6 +67,7 @@ namespace XiaoYaOpt
         public IList<SkillEntry> SkillsOf(string jobSlug)
         {
             List<SkillEntry> list;
+            if (jobSlug != null && _byLine.TryGetValue(jobSlug, out list)) return list;
             return _byJob.TryGetValue(jobSlug ?? "", out list) ? list : new List<SkillEntry>();
         }
 
@@ -86,14 +89,14 @@ namespace XiaoYaOpt
             foreach (string n in enNames) { string k = NameKey(n); if (k != null) wanted.Add(k); }
             main = BestJob(wanted, null);
             var rest = new HashSet<string>(wanted);
-            if (main.Length > 0) foreach (var e in _byJob[main]) rest.Remove(NameKey(e.EnName));
+            if (main.Length > 0) foreach (var e in SkillsOf(main)) rest.Remove(NameKey(e.EnName));
             sub = rest.Count > 0 ? BestJob(rest, main) : "";
         }
 
         private string BestJob(HashSet<string> wanted, string exclude)
         {
             string best = ""; int bestCount = 0;
-            foreach (var kv in _byJob)
+            foreach (var kv in _byLine)
             {
                 if (kv.Key.Length == 0 || kv.Key == exclude) continue;
                 int c = 0;
@@ -182,6 +185,18 @@ namespace XiaoYaOpt
                 foreach (var kv in entries)
                     db._byJob[kv.Key] = kv.Value.Values.Where(x => !x.IsPassive)
                         .OrderBy(x => x.JobLevel).ThenBy(x => x.Display, StringComparer.CurrentCulture).ToList();
+                foreach (var line in Jobs.Lines())
+                {
+                    var seen = new HashSet<string>();
+                    var list = new List<SkillEntry>();
+                    foreach (string job in line.Value)
+                    {
+                        List<SkillEntry> own;
+                        if (!db._byJob.TryGetValue(job, out own)) continue;
+                        foreach (var e in own) if (seen.Add(NameKey(e.EnName))) list.Add(e);
+                    }
+                    db._byLine[line.Key] = list;
+                }
             }
             return db;
         }

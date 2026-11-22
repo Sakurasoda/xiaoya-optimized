@@ -28,7 +28,7 @@ namespace XiaoYaOpt
         public const int MinSlots = 1;
         public const int MaxSlots = 15;
         public string Name;
-        /// <summary>職業代號（官網網址代號，例如 blacksmith）；空字串表示全部職業。</summary>
+        /// <summary>職業線（最終職業的官網代號，例如 maestro = 礦工系整條線）；空字串表示全部職業。</summary>
         public string Job = "";
         /// <summary>副職業體系 ID（例如 "9" = 礦工系）；空字串表示沒有副職業。</summary>
         public string SubJob = "";
@@ -97,7 +97,7 @@ namespace XiaoYaOpt
                 {
                     var s = new Settings(f);
                     var p = new Profile(s.Get("name", Path.GetFileNameWithoutExtension(f)));
-                    p.Job = s.Get("job", "");
+                    p.Job = Jobs.LineOf(s.Get("job", "")); // 舊版存的是單一職業，轉成所屬職業線
                     p.SubJob = s.Get("subJob", "");
                     int sysId;
                     if (p.SubJob.Length > 0 && !int.TryParse(p.SubJob, out sysId))
