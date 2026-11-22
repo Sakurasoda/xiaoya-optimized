@@ -12,7 +12,11 @@ $refs = '/r:System.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
 # Main app
 $exe = Join-Path $out 'XiaoYaOpt.exe'
 $sources = Get-ChildItem $src -Filter *.cs | ForEach-Object { $_.FullName }
-& $csc /nologo /target:winexe /optimize+ /codepage:65001 "/out:$exe" $refs $sources
+# Optional app icon: assets\app.ico is kept local only (official game artwork, ignored by git)
+$iconArgs = @()
+$ico = Join-Path $root 'assets\app.ico'
+if (Test-Path $ico) { $iconArgs = @("/win32icon:$ico") }
+& $csc /nologo /target:winexe /optimize+ /codepage:65001 "/out:$exe" $iconArgs $refs $sources
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 Write-Host "Built: $exe"
 

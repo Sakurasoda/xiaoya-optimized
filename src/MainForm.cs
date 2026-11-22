@@ -126,6 +126,8 @@ namespace XiaoYaOpt
             _store = new ProfileStore(Path.Combine(_baseDir, "角色設定"));
 
             Text = "小雅 優化版";
+            // 視窗左上角與工作列使用 exe 內嵌的圖示（建置時有 assets\app.ico 才會內嵌）
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             Font = new Font("Microsoft JhengHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
