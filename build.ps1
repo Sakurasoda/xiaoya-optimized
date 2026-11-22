@@ -21,3 +21,9 @@ $tool = Join-Path $out 'XlsExtract.exe'
 & $csc /nologo /target:exe /optimize+ /codepage:65001 "/out:$tool" (Join-Path $root 'tools\XlsExtract.cs') (Join-Path $src 'EcoArchive.cs')
 if ($LASTEXITCODE -ne 0) { throw "Tool build failed (exit $LASTEXITCODE)" }
 Write-Host "Built: $tool"
+
+# Skill table generator (command line): merges client effect.ssp files with the Nekogame wiki pages
+$merge = Join-Path $out 'SkillMerge.exe'
+& $csc /nologo /target:exe /optimize+ /codepage:65001 "/out:$merge" (Join-Path $root 'tools\SkillMerge.cs')
+if ($LASTEXITCODE -ne 0) { throw "SkillMerge build failed (exit $LASTEXITCODE)" }
+Write-Host "Built: $merge"

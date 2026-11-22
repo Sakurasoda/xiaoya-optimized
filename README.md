@@ -88,9 +88,20 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 自動填入時間需要一份本機的 `技能表.csv`（由遊戲檔案與 Nekogame 官網技能說明整合而成，含遊戲資料，因此**不包含在本 repo**）。小雅會依序在以下位置尋找，也可以按「技能表…」手動選擇：
 
 - exe 同目錄的 `技能表.csv`
-- 與「優化版」同層的 `技能資料\技能表.csv`
+- 與 repo 資料夾同層的 `技能資料\技能表.csv`
 
 需要的欄位：`等級`、`中文名稱`、`原文名稱`、`官網英文名`、`類型`、`詠唱時間(秒)`、`冷卻時間(秒)`、`持續時間(秒)`。快捷列裡的 `/useskill <英文技能名> <等級>` 會以英文名 + 等級查詢。
+
+### 重新產生技能表
+
+`bin\SkillMerge.exe`（原始碼 `tools\SkillMerge.cs`）會把遊戲的技能檔和官網技能說明整合成 `技能表.csv`：
+
+```powershell
+.\bin\SkillMerge.exe <遊戲\data\effect\effect.ssp> <中文化的 effect.ssp> <遊戲\lang\jp\data\effect\effect.ssp> <官網HTML資料夾> <輸出的 技能表.csv>
+```
+
+官網 HTML 要先下載到一個資料夾，每個職業一個 `<職業>.html`，網址是 `https://eco.nekogame.com/wiki/<職業>-skill-explanation`（職業代號見 `src\Jobs.cs`）。
+沒有官網資料的技能（多半是怪物技能、系統技能）只會有客戶端欄位。輸出含遊戲資料，請勿上傳或散佈。
 
 ## 與原版行為的對照說明
 
