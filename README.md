@@ -48,6 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
       副職業的技能接在後面、前面標示「［副］」，**只列出副職業真的學得到的技能，等級上限也照遊戲規定**；填了副職業等級時，只列這個等級已學得到的技能與等級。
       這份規定（`dualjob_skill_learn.csv`）是小雅執行時直接從遊戲資料夾的 `data\xls\table.dat` 讀出來的，第一次選副職業時會請你指定遊戲資料夾。
       被動技能不能按鍵施放，不會出現在清單中。技能下拉會顯示遊戲裡的技能圖示（同樣從遊戲資料夾讀取）。
+      清單最後還有標示「［特］」的**特殊技能**：不屬於任何職業，靠裝備（龍眼開放、賢者之石…）、夥伴（點火…）、憑依傀儡（萬雷衝擊…）、特定地圖或師徒關係取得，任何職業都會列出（資料來源：lycolia Wiki `?Skill/Special`，共 37 個主動技能；大多沒有時間資料，選了之後要自己填時間）。
    3. 技能格可以自己增減（**1～15 格**）：按「＋ 新增一格」新增（按鍵自動帶入還沒用過的 F1～F12，用完接著 1～9、0），按每格右邊的「✕」刪除。
       每一格選**按鍵**（要和遊戲快捷列上的位置一致）、**技能**與**等級**（預設最高等級），技能時間和延遲時間會自動帶入：
       - **技能時間**：增益技能 = 持續時間 − 3 秒（效果快結束時再放）；其他技能 = 延遲時間
@@ -97,11 +98,19 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 `bin\SkillMerge.exe`（原始碼 `tools\SkillMerge.cs`）會把遊戲的技能檔和官網技能說明整合成 `技能表.csv`：
 
 ```powershell
-.\bin\SkillMerge.exe <遊戲\data\effect\effect.ssp> <中文化的 effect.ssp> <遊戲\lang\jp\data\effect\effect.ssp> <官網HTML資料夾> <輸出的 技能表.csv>
+.\bin\SkillMerge.exe <遊戲\data\effect\effect.ssp> <中文化的 effect.ssp> <遊戲\lang\jp\data\effect\effect.ssp> <官網HTML資料夾> <輸出的 技能表.csv> [特殊技能.csv]
 ```
 
 官網 HTML 要先下載到一個資料夾，每個職業一個 `<職業>.html`，網址是 `https://eco.nekogame.com/wiki/<職業>-skill-explanation`（職業代號見 `src\Jobs.cs`）。
 沒有官網資料的技能（多半是怪物技能、系統技能）只會有客戶端欄位。輸出含遊戲資料，請勿上傳或散佈。
+
+第一個參數必須是**原版**（未中文化）的 `effect.ssp`，「原文名稱」欄（英文名，用來對應快捷列）才會正確；遊戲資料夾已經換成中文化技能檔時，請改用補入模式。
+
+**特殊技能**（`特殊技能.csv`，放在 `bin\`）：UTF-8，欄位 `日文名稱,取得方式,詠唱時間(秒),冷卻時間(秒),持續時間(秒),目標,憑依`（憑依填 ○／×／空白）。依日文名稱對應技能 ID（同名多個時取最小 ID），職業欄加上 `special`，並補上「憑依時使用」欄。也可以只把特殊技能補進既有的技能表：
+
+```powershell
+.\bin\SkillMerge.exe --special <既有的 技能表.csv> <特殊技能.csv> <輸出的 技能表.csv>
+```
 
 ## 與原版行為的對照說明
 

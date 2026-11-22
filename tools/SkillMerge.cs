@@ -8,7 +8,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 // Merge Nekogame wiki skill pages (cast time, cooldown, ...) into the client skill table.
-// args: gameSsp zhSsp jpSsp wikiHtmlDir outCsv
+// args: gameSsp zhSsp jpSsp wikiHtmlDir outCsv [specialSkillsCsv]
+//   or: --special existingTable.csv specialSkillsCsv outCsv   (patch special skills into an existing table)
 static class SkillMerge
 {
     const int RecBase = 0x30000, RecSize = 728;
@@ -119,6 +120,107 @@ static class SkillMerge
         return "\"" + s.Replace("\"", "\"\"") + "\"";
     }
 
+    // ---------- special skills (not tied to a job) ----------
+    // UTF-8 CSV with header: 日文名稱,取得方式,詠唱時間(秒),冷卻時間(秒),持續時間(秒),目標,憑依
+    class SpecialSkill { public string Jp, Source, Cast, Cd, Dur, Target, Possess; }
+
+    static List<SpecialSkill> ReadSpecial(string path)
+    {
+        var list = new List<SpecialSkill>();
+        var lines = File.ReadAllLines(path, Encoding.UTF8);
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var c = lines[i].Split(',');
+            if (c.Length < 7 || c[0].Trim().Length == 0) continue;
+            list.Add(new SpecialSkill { Jp = c[0].Trim(), Source = c[1].Trim(), Cast = c[2].Trim(), Cd = c[3].Trim(), Dur = c[4].Trim(), Target = c[5].Trim(), Possess = c[6].Trim() });
+        }
+        return list;
+    }
+
+    static string Or(string a, string b) { return string.IsNullOrEmpty(a) ? (b ?? "") : a; }
+
+    static List<string> ParseCsvLine(string line)
+    {
+        var res = new List<string>(); var sb = new StringBuilder(); bool q = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (q)
+            {
+                if (c == '"') { if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; } else q = false; }
+                else sb.Append(c);
+            }
+            else if (c == '"') q = true;
+            else if (c == ',') { res.Add(sb.ToString()); sb.Clear(); }
+            else sb.Append(c);
+        }
+        res.Add(sb.ToString());
+        return res;
+    }
+
+    /// <summary>
+    /// 補入模式：在既有的技能表上補入特殊技能（不需要原版遊戲檔，例如遊戲已換成中文化 effect.ssp 時）。
+    /// 依日文名稱對應技能 ID（同名多個時取最小 ID），把職業加上 special 並補上空白的時間欄位與「憑依時使用」欄。
+    /// </summary>
+    static void PatchSpecial(string inCsv, string specialCsv, string outCsv)
+    {
+        var lines = File.ReadAllLines(inCsv, Encoding.UTF8);
+        var header = ParseCsvLine(lines[0]);
+        int cPossess = header.IndexOf("憑依時使用");
+        if (cPossess < 0) { header.Add("憑依時使用"); cPossess = header.Count - 1; }
+        Func<string, int> col = n => { int i = header.IndexOf(n); if (i < 0) throw new InvalidDataException("技能表缺少欄位：" + n); return i; };
+        int cId = col("技能ID"), cZh = col("中文名稱"), cOrig = col("原文名稱"), cJp = col("日文名稱"), cJob = col("職業"),
+            cEn = col("官網英文名"), cType = col("類型"), cTarget = col("目標"), cJobLv = col("習得職業等級"),
+            cCast = col("詠唱時間(秒)"), cCd = col("冷卻時間(秒)"), cDur = col("持續時間(秒)"), cOther = col("官網其他數值"), cHow = col("官網對應方式");
+
+        var rows = new List<List<string>>();
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var r = ParseCsvLine(lines[i]);
+            while (r.Count < header.Count) r.Add("");
+            rows.Add(r);
+        }
+        // 日文名 → 最小技能 ID
+        var minId = new Dictionary<string, uint>();
+        foreach (var r in rows)
+        {
+            uint id; if (!uint.TryParse(r[cId], out id) || r[cJp].Length == 0) continue;
+            string k = Norm(r[cJp]); uint cur;
+            if (!minId.TryGetValue(k, out cur) || id < cur) minId[k] = id;
+        }
+        var specialById = new Dictionary<uint, SpecialSkill>();
+        foreach (var s in ReadSpecial(specialCsv))
+        {
+            uint id;
+            if (minId.TryGetValue(Norm(s.Jp), out id)) specialById[id] = s;
+            else Console.WriteLine("  special skill not in table: " + s.Jp);
+        }
+        int patched = 0;
+        foreach (var r in rows)
+        {
+            uint id; SpecialSkill sp;
+            if (!uint.TryParse(r[cId], out id) || !specialById.TryGetValue(id, out sp)) continue;
+            var jobs = new List<string>(r[cJob].Split(new[] { '、' }, StringSplitOptions.RemoveEmptyEntries));
+            if (!jobs.Contains("special")) jobs.Add("special");
+            r[cJob] = string.Join("、", jobs);
+            r[cEn] = Or(r[cEn], Or(r[cOrig], Or(r[cJp], r[cZh])));
+            r[cType] = Or(r[cType], "Special active");
+            r[cTarget] = Or(r[cTarget], sp.Target);
+            r[cJobLv] = Or(r[cJobLv], "0");
+            r[cCast] = Or(r[cCast], sp.Cast); r[cCd] = Or(r[cCd], sp.Cd); r[cDur] = Or(r[cDur], sp.Dur);
+            if (!r[cOther].Contains("取得=")) r[cOther] = r[cOther].Length == 0 ? "取得=" + sp.Source : r[cOther] + "; 取得=" + sp.Source;
+            r[cHow] = Or(r[cHow], "特殊技能表");
+            r[cPossess] = sp.Possess;
+            patched++;
+        }
+        using (var wr = new StreamWriter(outCsv, false, new UTF8Encoding(true)))
+        {
+            wr.WriteLine(string.Join(",", header));
+            foreach (var r in rows) wr.WriteLine(string.Join(",", r.Select(Csv)));
+        }
+        Console.WriteLine("special skills matched: {0}, rows patched: {1}", specialById.Count, patched);
+    }
+
     static bool NumEq(string wikiVal, int clientVal)
     {
         int w;
@@ -127,8 +229,14 @@ static class SkillMerge
 
     static void Main(string[] args)
     {
+        if (args.Length == 4 && args[0] == "--special")
+        {
+            PatchSpecial(args[1], args[2], args[3]);
+            return;
+        }
         byte[] g = File.ReadAllBytes(args[0]), zh = File.ReadAllBytes(args[1]), jp = File.ReadAllBytes(args[2]);
         string wikiDir = args[3], outCsv = args[4];
+        string specialCsv = args.Length > 5 ? args[5] : null;
 
         // client records
         var recs = new List<ClientRec>();
@@ -208,10 +316,23 @@ static class SkillMerge
         // group wiki skills by matched id (a skill may appear in several jobs)
         var wikiById = matchOf.GroupBy(kv => kv.Value).ToDictionary(x => x.Key, x => x.Select(y => y.Key).ToList());
 
+        // special skills: match by Japanese name; several ids (e.g. one per partner) -> the lowest id represents the skill
+        var specialById = new Dictionary<uint, SpecialSkill>();
+        if (specialCsv != null)
+        {
+            foreach (var s in ReadSpecial(specialCsv))
+            {
+                List<uint> cands;
+                if (!byJp.TryGetValue(Norm(s.Jp), out cands)) { Console.WriteLine("  special skill not in client: " + s.Jp); continue; }
+                specialById[cands.Min()] = s;
+            }
+            Console.WriteLine("special skills matched: {0}", specialById.Count);
+        }
+
         string[] mainCols = { "Lv", "MP", "SP", "Cast time", "Cooldown", "Duration" };
         using (var wr = new StreamWriter(outCsv, false, new UTF8Encoding(true)))
         {
-            wr.WriteLine("技能ID,等級,中文名稱,原文名稱,日文名稱,MP消耗(客戶端),SP消耗(客戶端),官網MP,官網SP,詠唱時間(秒),冷卻時間(秒),持續時間(秒),職業,官網英文名,類型,目標,射程,習得職業等級,官網其他數值,官網對應方式,說明");
+            wr.WriteLine("技能ID,等級,中文名稱,原文名稱,日文名稱,MP消耗(客戶端),SP消耗(客戶端),官網MP,官網SP,詠唱時間(秒),冷卻時間(秒),持續時間(秒),職業,官網英文名,類型,目標,射程,習得職業等級,官網其他數值,官網對應方式,說明,憑依時使用");
             foreach (var cr in recs)
             {
                 if (cr.Zh.Length == 0 && cr.Orig.Length == 0) continue;
@@ -224,13 +345,30 @@ static class SkillMerge
                 }
                 string jobs = ws == null ? "" : string.Join("、", ws.Select(x => x.Job).Distinct());
                 string other = wl == null ? "" : string.Join("; ", wl.Cells.Where(c => !mainCols.Contains(c.Key)).Select(c => c.Key + "=" + c.Value));
+                string name = w == null ? "" : w.Name, type = w == null ? "" : w.Type, target = w == null ? "" : w.Target;
+                string jobLv = w == null ? "" : w.JobLv, how = w == null ? "" : howOf[w], possess = "";
+                string cast = Seconds(Get(wl, "Cast time")), cd = Seconds(Get(wl, "Cooldown")), dur = Seconds(Get(wl, "Duration"));
+                SpecialSkill sp;
+                if (specialById.TryGetValue(cr.Id, out sp))
+                {
+                    // 特殊技能（lycolia Wiki ?Skill/Special）：職業歸為 special，官網沒有的欄位用特殊技能表補上
+                    jobs = jobs.Length == 0 ? "special" : jobs + "、special";
+                    name = Or(name, Or(cr.Orig, cr.Jp));
+                    type = Or(type, "Special active");
+                    target = Or(target, sp.Target);
+                    jobLv = Or(jobLv, "0");
+                    cast = Or(cast, sp.Cast); cd = Or(cd, sp.Cd); dur = Or(dur, sp.Dur);
+                    other = other.Length == 0 ? "取得=" + sp.Source : other + "; 取得=" + sp.Source;
+                    how = Or(how, "特殊技能表");
+                    possess = sp.Possess;
+                }
                 wr.WriteLine(string.Join(",", new[] {
                     cr.Id.ToString(), cr.Lv.ToString(), Csv(cr.Zh), Csv(cr.Orig), Csv(cr.Jp),
                     cr.Mp.ToString(), cr.Sp.ToString(), Csv(Get(wl, "MP")), Csv(Get(wl, "SP")),
-                    Csv(Seconds(Get(wl, "Cast time"))), Csv(Seconds(Get(wl, "Cooldown"))), Csv(Seconds(Get(wl, "Duration"))),
-                    Csv(jobs), Csv(w == null ? "" : w.Name), Csv(w == null ? "" : w.Type), Csv(w == null ? "" : w.Target),
-                    Csv(w == null ? "" : w.Range), Csv(w == null ? "" : w.JobLv), Csv(other),
-                    Csv(w == null ? "" : howOf[w]), Csv(cr.DescZh) }));
+                    Csv(cast), Csv(cd), Csv(dur),
+                    Csv(jobs), Csv(name), Csv(type), Csv(target),
+                    Csv(w == null ? "" : w.Range), Csv(jobLv), Csv(other),
+                    Csv(how), Csv(cr.DescZh), Csv(possess) }));
             }
             // wiki skills with no client match: append so nothing is lost
             foreach (var w in wiki.Where(x => !matchOf.ContainsKey(x)))
@@ -244,7 +382,7 @@ static class SkillMerge
                         "\"\"", "\"\"", Csv(Get(wl, "MP")), Csv(Get(wl, "SP")),
                         Csv(Seconds(Get(wl, "Cast time"))), Csv(Seconds(Get(wl, "Cooldown"))), Csv(Seconds(Get(wl, "Duration"))),
                         Csv(w.Job), Csv(w.Name), Csv(w.Type), Csv(w.Target), Csv(w.Range), Csv(w.JobLv), Csv(other),
-                        Csv("客戶端找不到對應技能"), "\"\"" }));
+                        Csv("客戶端找不到對應技能"), "\"\"", "\"\"" }));
                 }
             }
         }

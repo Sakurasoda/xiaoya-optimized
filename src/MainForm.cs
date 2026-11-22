@@ -65,9 +65,11 @@ namespace XiaoYaOpt
         {
             public SkillEntry Entry;
             public bool Sub;
+            /// <summary>特殊技能（不屬於任何職業，靠裝備、夥伴、傀儡等取得），前面加「［特］」。</summary>
+            public bool Special;
             /// <summary>可選的最高等級；0 表示不限（主職業技能）。副職業技能依副職業表限制。</summary>
             public int MaxLevel;
-            public override string ToString() { return (Sub ? "［副］" : "") + Entry.Display; }
+            public override string ToString() { return (Sub ? "［副］" : Special ? "［特］" : "") + Entry.Display; }
         }
         private readonly Button _btnImport = new Button();
         private readonly Button _btnDb = new Button();
@@ -679,6 +681,10 @@ namespace XiaoYaOpt
                     if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e, Sub = true, MaxLevel = max });
                 }
             }
+            // 特殊技能：任何職業都可能有（裝備、夥伴、傀儡、地圖…），接在最後
+            if (p.Job.Length > 0)
+                foreach (var e in _db.SkillsOf(SkillDb.SpecialSlug))
+                    if (seen.Add(Normalize(e.EnName))) list.Add(new SkillChoice { Entry = e, Special = true });
             return list;
         }
 
@@ -827,12 +833,14 @@ namespace XiaoYaOpt
                 lowered++;
             }
             if (lowered > 0) EditorToProfile(_current);
-            int mainCount = choices.Count(c => !c.Sub), subCount = choices.Count(c => c.Sub);
+            int mainCount = choices.Count(c => !c.Sub && !c.Special), subCount = choices.Count(c => c.Sub),
+                specialCount = choices.Count(c => c.Special);
+            string special = specialCount > 0 ? string.Format("、［特］{0}", specialCount) : "";
             string what = _current.SubJob.Length > 0
-                ? string.Format("{0}＋{1}{2}：可選 {3} 個技能（主 {4}、［副］{5}）",
+                ? string.Format("{0}＋{1}{2}：可選 {3} 個技能（主 {4}、［副］{5}{6}）",
                     job.Display, ((JobInfo)_cboSubJob.SelectedItem).Display,
-                    _current.SubJobLevel > 0 ? " Lv" + _current.SubJobLevel : "", choices.Count, mainCount, subCount)
-                : string.Format("{0}：可選 {1} 個技能", job.Display, mainCount);
+                    _current.SubJobLevel > 0 ? " Lv" + _current.SubJobLevel : "", choices.Count, mainCount, subCount, special)
+                : string.Format("{0}：可選 {1} 個技能（主 {2}{3}）", job.Display, choices.Count, mainCount, special);
             _lblHint.Text = what + "。"
                 + (cleared > 0 ? string.Format("{0} 格技能已不可用，已清除並停用。", cleared) : "")
                 + (lowered > 0 ? string.Format("{0} 格技能等級超過副職業上限，已降級並重算時間。", lowered) : "");

@@ -34,6 +34,8 @@ namespace XiaoYaOpt
         public string EnName;
         public string ZhName;
         public int JobLevel;
+        /// <summary>技能表「憑依時使用」欄（Wiki 明確寫出時才有值）：true = ○、false = ×、null = 沒寫。</summary>
+        public bool? PossessUsable;
         public SortedDictionary<int, SkillInfo> Levels = new SortedDictionary<int, SkillInfo>();
 
         public string Display { get { return ZhName.Length > 0 ? ZhName : EnName; } }
@@ -49,6 +51,8 @@ namespace XiaoYaOpt
     /// </summary>
     internal sealed class SkillDb
     {
+        /// <summary>技能表「職業」欄裡代表特殊技能（不屬於任何職業）的代號。</summary>
+        public const string SpecialSlug = "special";
         private readonly Dictionary<string, SkillInfo> _byKey = new Dictionary<string, SkillInfo>();
         /// <summary>職業代號 → 該職業的技能（依習得職業等級排序，不含被動技能）。空字串代表全部職業。</summary>
         private readonly Dictionary<string, List<SkillEntry>> _byJob = new Dictionary<string, List<SkillEntry>>();
@@ -120,7 +124,7 @@ namespace XiaoYaOpt
                     cOrig = header.IndexOf("原文名稱"), cWikiEn = header.IndexOf("官網英文名"),
                     cCast = header.IndexOf("詠唱時間(秒)"), cCd = header.IndexOf("冷卻時間(秒)"), cDur = header.IndexOf("持續時間(秒)"),
                     cType = header.IndexOf("類型"), cJob = header.IndexOf("職業"), cJobLv = header.IndexOf("習得職業等級"),
-                    cJp = header.IndexOf("日文名稱");
+                    cJp = header.IndexOf("日文名稱"), cPossess = header.IndexOf("憑依時使用");
                 var entries = new Dictionary<string, Dictionary<string, SkillEntry>>(); // job -> nameKey -> entry
                 if (cLv < 0 || cZh < 0 || cOrig < 0 || cWikiEn < 0 || cCast < 0 || cCd < 0 || cDur < 0)
                     throw new InvalidDataException("技能表缺少必要欄位（等級、中文名稱、原文名稱、官網英文名、詠唱/冷卻/持續時間）");
@@ -141,6 +145,9 @@ namespace XiaoYaOpt
                         DurationSec = ParseSec(row[cDur]),
                         Type = cType >= 0 ? row[cType] : ""
                     };
+                    string possessCell = cPossess >= 0 ? row[cPossess].Trim() : "";
+                    bool? possess = possessCell == "○" ? true : possessCell == "×" ? (bool?)false : null;
+
                     // 官網英文名與遊戲原文名都建索引；有官網時間資料的列優先。
                     db.Add(row[cWikiEn], lv, info);
                     db.Add(row[cOrig], lv, info);
@@ -155,7 +162,7 @@ namespace XiaoYaOpt
                             {
                                 Id = id, Type = info.Type, JpName = cJp >= 0 ? row[cJp].Trim() : "",
                                 EnName = row[cWikiEn].Length > 0 ? row[cWikiEn] : row[cOrig],
-                                ZhName = row[cZh].Trim()
+                                ZhName = row[cZh].Trim(), PossessUsable = possess
                             };
                         if (!byId.Levels.ContainsKey(lv)) byId.Levels[lv] = info;
                     }
@@ -177,7 +184,7 @@ namespace XiaoYaOpt
                             map[nk] = e = new SkillEntry
                             {
                                 Id = id, EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type,
-                                JpName = cJp >= 0 ? row[cJp].Trim() : ""
+                                JpName = cJp >= 0 ? row[cJp].Trim() : "", PossessUsable = possess
                             };
                         if (!e.Levels.ContainsKey(lv)) e.Levels[lv] = info;
                     }

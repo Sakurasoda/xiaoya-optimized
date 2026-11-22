@@ -27,6 +27,7 @@ namespace XiaoYaOpt
         public static bool Guess(SkillEntry e)
         {
             if (e == null) return false;
+            if (e.PossessUsable.HasValue) return e.PossessUsable.Value; // 技能表有明確資料（例如特殊技能）
             if (!string.IsNullOrEmpty(e.JpName) && WikiUsable.Contains(e.JpName)) return true;
             string t = (e.Type ?? "").ToLowerInvariant();
             if (t.Length == 0 || t.StartsWith("passive")) return false;
