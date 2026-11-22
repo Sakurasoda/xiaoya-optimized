@@ -94,6 +94,7 @@ namespace XiaoYaOpt
         private readonly RadioButton _rbCenter = new RadioButton();
         private readonly RadioButton _rbCustom = new RadioButton();
         private readonly CheckBox _chkCtrlT = new CheckBox();
+        private readonly CheckBox _chkMoveCursor = new CheckBox();
         private readonly NumericUpDown _numX = new NumericUpDown();
         private readonly NumericUpDown _numY = new NumericUpDown();
         private readonly Button _btnCapture = new Button();
@@ -343,6 +344,13 @@ namespace XiaoYaOpt
             _cboButton.DropDownStyle = ComboBoxStyle.DropDownList;
             _cboButton.Items.AddRange(new object[] { "左鍵", "右鍵" });
             _cboButton.SetBounds(80, 75, 60, 23);
+            _chkMoveCursor.Text = "點擊時把游標移過去（游標會瞬間跳動）";
+            _chkMoveCursor.SetBounds(160, 76, 440, 22);
+            _tip.SetToolTip(_chkMoveCursor,
+                "原版不移動游標，只把點擊訊息送進遊戲視窗。\r\n" +
+                "如果背景點擊在遊戲裡沒反應（例如滑鼠不在那個遊戲視窗上時），再勾這個：\r\n" +
+                "點擊前把游標移到目標位置，點完約 0.16 秒後移回原處。");
+            _grpOptions.Controls.Add(_chkMoveCursor);
 
             var clickPanel = new Panel();
             clickPanel.SetBounds(8, 102, 600, 52);
@@ -1177,7 +1185,8 @@ namespace XiaoYaOpt
                 ClickX = (int)_numX.Value,
                 ClickY = (int)_numY.Value,
                 StaggerMs = (int)_numStagger.Value,
-                SendCtrlT = _chkCtrlT.Checked
+                SendCtrlT = _chkCtrlT.Checked,
+                MoveCursorForClick = _chkMoveCursor.Checked
             };
         }
 
@@ -1264,6 +1273,7 @@ namespace XiaoYaOpt
             _numX.Value = Clamp(_numX, s.GetInt("mouse.x", 0));
             _numY.Value = Clamp(_numY, s.GetInt("mouse.y", 0));
             _numStagger.Value = Clamp(_numStagger, s.GetInt("stagger", 50));
+            _chkMoveCursor.Checked = s.GetBool("mouse.moveCursor", false);
             _chkCtrlT.Checked = s.GetBool("ctrlT", true);
             _gameDir = s.Get("gameDir", "");
             _skillDbPath = s.Get("skillDb", "");
@@ -1320,6 +1330,7 @@ namespace XiaoYaOpt
             s.Set("mouse.x", (int)_numX.Value);
             s.Set("mouse.y", (int)_numY.Value);
             s.Set("stagger", (int)_numStagger.Value);
+            s.Set("mouse.moveCursor", _chkMoveCursor.Checked);
             s.Set("ctrlT", _chkCtrlT.Checked);
             s.Set("gameDir", _gameDir);
             s.Set("skillDb", _skillDbPath);

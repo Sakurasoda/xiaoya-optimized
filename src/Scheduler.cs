@@ -37,6 +37,11 @@ namespace XiaoYaOpt
         public int StaggerMs;
         /// <summary>ECO 的 Ctrl+T 是切換拍照模式（隱藏 UI）。開始時送一次進入、停止時再送一次離開（同原版）。</summary>
         public bool SendCtrlT;
+        /// <summary>
+        /// 背景點擊時先把實體游標移到點擊位置、點完再移回（游標會瞬間跳動）。
+        /// false = 同原版，只送滑鼠訊息、不動游標。
+        /// </summary>
+        public bool MoveCursorForClick;
     }
 
     /// <summary>
@@ -250,7 +255,7 @@ namespace XiaoYaOpt
                         Interlocked.Increment(ref _sent);
 
                         long pressEnd = now + (_cfg.Mode == SendMode.Background
-                            ? PressMs + (slot.Mouse ? ClickHoldMs + ClickSettleMs : 0)
+                            ? PressMs + (!slot.Mouse ? 0 : _cfg.MoveCursorForClick ? ClickHoldMs + ClickSettleMs : PressMs)
                             : 0);
                         _busyUntil[job.Hwnd] = pressEnd + Math.Max(0, slot.DelayMs);
 
@@ -267,7 +272,16 @@ namespace XiaoYaOpt
                     break;
 
                 case JobKind.MouseDown:
-                    ClickWithCursor(job.Hwnd);
+                    if (_cfg.MoveCursorForClick)
+                    {
+                        ClickWithCursor(job.Hwnd);
+                    }
+                    else
+                    {
+                        // 同原版 FUN_00403712：移動 → 按下，30ms 後再 移動 → 放開，不動實體游標。
+                        PostMouse(job.Hwnd, false);
+                        Add(now + PressMs, job.Hwnd, job.Slot, JobKind.MouseUp);
+                    }
                     break;
 
                 case JobKind.MouseUp:
@@ -351,6 +365,7 @@ namespace XiaoYaOpt
             }
             else
             {
+                Native.PostMessageW(hwnd, Native.WM_MOUSEMOVE, IntPtr.Zero, pos); // 原版放開前也會先送一次移動
                 Native.PostMessageW(hwnd, _cfg.RightButton ? Native.WM_RBUTTONUP : Native.WM_LBUTTONUP,
                     IntPtr.Zero, pos);
             }

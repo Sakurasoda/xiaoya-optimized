@@ -134,14 +134,18 @@ C# 移植在 `src/EcoArchive.cs`；`table.hed` 184 筆全部可解（解出大�
 - `dualjob_skill_learn.csv`：`體系ID, 技能ID, 技能名, 所屬職業ID, Lv1..Lv10 需要的副職業等級`（0 = 該等級學不到），共 933 列。
 - 小雅依此只列出副職業學得到的技能，並限制等級上限。
 
-### 6.5 滑鼠輸入（為什麼背景點擊會失效）
+### 6.5 滑鼠輸入（背景點擊與實體游標）
+
+原版的滑鼠函式 `FUN_00403712`（易語言通用「滑鼠訊息」模組）每次呼叫都先 `PostMessage(WM_MOUSEMOVE)`，再送 `WM_LBUTTONDOWN`（wParam = MK_LBUTTON）或 `WM_LBUTTONUP`（wParam = 0），`lParam = x + y × 65536`，**完全不移動實體游標**。優化版預設照做。
+
+以下是 eco.exe 這邊看到的程式，但**尚未在遊戲中實測**它是否影響點擊目標（`DAT_00c95acc/ad0` 可能只用在游標顯示或鏡頭）：
 
 - 視窗類別在 `FUN_00553280` 註冊，視窗程序是 `FUN_005539d0`。滑鼠訊息（0x200～0x20D）的座標取自 `lParam`，按鍵狀態取自 `wParam` 的 MK_ 旗標，存進輸入物件（`0xd4ab20`，座標在 `+0x778/+0x77c` = `DAT_00d4b298/29c`）；UI 的點擊判斷在 `FUN_0054d250`，同樣使用 `lParam`。
 - 但每一幀 `FUN_0054e380` 會：`GetCursorPos` → `ScreenToClient` → `PtInRect(遊戲畫面範圍)`。
   **實體游標在範圍內**才採用訊息帶來的座標（`DAT_00d4b298/29c`）；**不在範圍內**就改用實體游標的位置。
-- 因此只用 `PostMessage` 送點擊時，只有實體游標剛好停在該遊戲視窗上才有效。多開時其他視窗都點不到；原版小雅同樣有這個問題。
+- 如果這段影響點擊目標，只用 `PostMessage` 送點擊時，就只有實體游標剛好停在該遊戲視窗上才有效。
 - 遊戲沒有使用 DirectInput 或 `GetAsyncKeyState`（`GetKeyState` 只用來判斷 Ctrl／Shift）。
-- 優化版的做法（`Scheduler.ClickWithCursor`）：點擊前把游標移到目標位置，送出按下 → 100 ms → 放開 → 60 ms 後移回原處。遊戲只比對座標，視窗被蓋住也有效。
+- 因此優化版另外提供選項「點擊時把游標移過去」（`Scheduler.ClickWithCursor`，預設關閉）：點擊前把游標移到目標位置，送出按下 → 100 ms → 放開 → 60 ms 後移回原處。遊戲只比對座標，視窗被蓋住也有效。
 
 ## 5. 風險評估
 
