@@ -284,27 +284,32 @@ namespace XiaoYaOpt
     /// <summary>依技能資料建議「技能時間」與「延遲時間」。</summary>
     internal static class TimingAdvisor
     {
-        public const int DelayBufferMs = 500;     // 延遲 = 詠唱 + 緩衝
+        public const int DelayBufferMs = 500;     // 延遲 = 詠唱 + 冷卻 + 緩衝
         public const int BuffMarginMs = 3000;     // 增益技在效果結束前多久重放
         public const int MinIntervalMs = 1000;
         public const int UnknownBuffIntervalMs = 60000; // 增益技能查不到持續時間時的保守預設
 
         public static int SuggestIntervalMs(SkillInfo s)
         {
-            int cd = ToMs(s.CooldownSec), dur = ToMs(s.DurationSec), cast = ToMs(s.CastSec);
+            int dur = ToMs(s.DurationSec);
             int interval;
             if (dur > 0)
                 interval = dur > BuffMarginMs * 2 ? dur - BuffMarginMs : dur; // 有持續時間：效果快結束時再放
             else
-                interval = cd;
-            interval = Math.Max(interval, cd);
-            interval = Math.Max(interval, cast + DelayBufferMs);
+                interval = 0;
+            // 至少要等這次施放完全結束（詠唱＋施放後的硬直）
+            interval = Math.Max(interval, SuggestDelayMs(s));
             return Math.Max(interval, MinIntervalMs);
         }
 
+        /// <summary>
+        /// 延遲時間 = 詠唱 + 冷卻 + 緩衝。官網的「冷卻」是施放後的硬直（ディレイ，全部 ≤ 10 秒、97% ≤ 3 秒），
+        /// 這段時間內不能放任何技能；只算詠唱的話，下一個技能會在硬直中被按下而失效
+        /// （例：火焰之心 詠唱 1 + 冷卻 1.5 秒，之後接武器增強，延遲只給 1.5 秒時武器增強放不出來）。
+        /// </summary>
         public static int SuggestDelayMs(SkillInfo s)
         {
-            return ToMs(s.CastSec) + DelayBufferMs;
+            return ToMs(s.CastSec) + ToMs(s.CooldownSec) + DelayBufferMs;
         }
 
         private static int ToMs(double? sec)
