@@ -147,7 +147,7 @@ C# 移植在 `src/EcoArchive.cs`；`table.hed` 184 筆全部可解（解出大�
   **實體游標在範圍內**才採用訊息帶來的座標（`DAT_00d4b298/29c`）；**不在範圍內**就改用實體游標的位置。
 - 原本推測這段會讓背景點擊只在實體游標停在該視窗上時才有效，實測並非如此。
 - 遊戲沒有使用 DirectInput 或 `GetAsyncKeyState`（`GetKeyState` 只用來判斷 Ctrl／Shift）。
-- 優化版仍保留選項「點擊時把游標移過去」（`Scheduler.ClickWithCursor`，預設關閉，一般不需要），以備特殊情況：點擊前把游標移到目標位置，送出按下 → 100 ms → 放開 → 60 ms 後移回原處。遊戲只比對座標，視窗被蓋住也有效。
+- 排程器裡仍保留「點擊時把游標移過去」的實作（`Scheduler.ClickWithCursor`，`RunConfig.MoveCursorForClick`），介面上已不提供：點擊前把游標移到目標位置，送出按下 → 100 ms → 放開 → 60 ms 後移回原處。遊戲只比對座標，視窗被蓋住也有效。
 
 ## 5. 風險評估
 

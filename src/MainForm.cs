@@ -69,9 +69,6 @@ namespace XiaoYaOpt
             public int MaxLevel;
             public override string ToString() { return (Sub ? "［副］" : "") + Entry.Display; }
         }
-        private readonly Button _btnImport = new Button();
-        private readonly Button _btnDb = new Button();
-        private readonly Label _lblDb = new Label();
         private readonly Label _lblHint = new Label();
         private readonly Panel _slotPanel = new Panel();
         private readonly Button _btnAddSlot = new Button();
@@ -87,25 +84,15 @@ namespace XiaoYaOpt
         private readonly NumericUpDown[] _numDelay = new NumericUpDown[MaxRows];
 
         // 選項
-        private readonly GroupBox _grpOptions = new GroupBox();
-        private readonly RadioButton _rbBackground = new RadioButton();
-        private readonly RadioButton _rbForeground = new RadioButton();
-        private readonly ComboBox _cboButton = new ComboBox();
-        private readonly RadioButton _rbCenter = new RadioButton();
-        private readonly RadioButton _rbCustom = new RadioButton();
         private readonly CheckBox _chkCtrlT = new CheckBox();
-        private readonly CheckBox _chkMoveCursor = new CheckBox();
-        private readonly NumericUpDown _numX = new NumericUpDown();
-        private readonly NumericUpDown _numY = new NumericUpDown();
-        private readonly Button _btnCapture = new Button();
-        private readonly NumericUpDown _numStagger = new NumericUpDown();
+        /// <summary>多開時每個視窗的第一次施放錯開多久（避免同一瞬間一起送）。</summary>
+        private const int DefaultStaggerMs = 50;
 
         private readonly Button _btnStart = new Button();
         private readonly Button _btnStop = new Button();
         private readonly Button _btnSave = new Button();
         private readonly Label _lblStatus = new Label();
         private readonly Timer _uiTimer = new Timer();
-        private readonly Timer _captureTimer = new Timer();
 
         private readonly string _baseDir;
         private readonly string _settingsPath;
@@ -114,7 +101,6 @@ namespace XiaoYaOpt
         private readonly Dictionary<string, string> _assignByTitle = new Dictionary<string, string>();
         private Profile _current;
         private SkillDb _db;
-        private string _skillDbPath = "";
         private string _gameDir = "";
         private bool _loadingEditor;
         private Scheduler _scheduler;
@@ -133,7 +119,7 @@ namespace XiaoYaOpt
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
-            ClientSize = new Size(640, 816);
+            ClientSize = new Size(640, 622);
             StartPosition = FormStartPosition.CenterScreen;
 
             BuildUi();
@@ -143,8 +129,6 @@ namespace XiaoYaOpt
 
             _uiTimer.Interval = 1000;
             _uiTimer.Tick += delegate { UpdateStatus(); };
-            _captureTimer.Interval = 3000;
-            _captureTimer.Tick += OnCaptureTick;
         }
 
         // =====================================================================
@@ -215,11 +199,6 @@ namespace XiaoYaOpt
             _btnDelete.Click += delegate { DeleteProfile(); };
             _grpProfile.Controls.AddRange(new Control[] { _cboProfile, _btnNew, _btnCopy, _btnRename, _btnDelete });
 
-            _btnDb.Text = "技能表…";
-            _btnDb.SetBounds(538, 20, 70, 27);
-            _btnDb.Click += delegate { ChooseSkillDb(); };
-            _grpProfile.Controls.Add(_btnDb);
-
             AddLabel(_grpProfile, "職業", 12, 59);
             _cboJob.DropDownStyle = ComboBoxStyle.DropDownList;
             _cboJob.SetBounds(50, 56, 170, 23);
@@ -239,10 +218,7 @@ namespace XiaoYaOpt
             _numSubLv.Maximum = 110; // 副職業等級上限 110
             _numSubLv.ValueChanged += OnJobChanged;
             _tip.SetToolTip(_numSubLv, "副職業等級：只列出這個等級已經學得到的技能與技能等級。0 = 不限");
-            _btnImport.Text = "從遊戲匯入…";
-            _btnImport.SetBounds(506, 54, 102, 27);
-            _btnImport.Click += delegate { ImportFromGame(); };
-            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _cboSubJob, _numSubLv, _btnImport });
+            _grpProfile.Controls.AddRange(new Control[] { _cboJob, _cboSubJob, _numSubLv });
 
             AddLabel(_grpProfile, "啟用", 12, 90);
             AddLabel(_grpProfile, "按鍵", 52, 90);
@@ -326,71 +302,22 @@ namespace XiaoYaOpt
             _lblHint.ForeColor = Color.DimGray;
             _grpProfile.Controls.Add(_lblHint);
 
-            // ---- 選項 ----
-            _grpOptions.Text = "選項（所有視窗共用）";
-            _grpOptions.SetBounds(12, 546, 616, 200);
-            Controls.Add(_grpOptions);
-            var modePanel = new Panel();
-            modePanel.SetBounds(8, 18, 600, 50);
-            _rbBackground.Text = "背景送出（不搶焦點，同原版，多開建議）";
-            _rbBackground.SetBounds(6, 2, 560, 22);
-            _rbForeground.Text = "前景送出（切到視窗 + 模擬實體按鍵，相容性較高但會搶焦點）";
-            _rbForeground.SetBounds(6, 26, 560, 22);
-            modePanel.Controls.Add(_rbBackground);
-            modePanel.Controls.Add(_rbForeground);
-            _grpOptions.Controls.Add(modePanel);
-
-            AddLabel(_grpOptions, "滑鼠按鍵", 14, 78);
-            _cboButton.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cboButton.Items.AddRange(new object[] { "左鍵", "右鍵" });
-            _cboButton.SetBounds(80, 75, 60, 23);
-            _chkMoveCursor.Text = "點擊時把游標移過去（游標會瞬間跳動）";
-            _chkMoveCursor.SetBounds(160, 76, 440, 22);
-            _tip.SetToolTip(_chkMoveCursor,
-                "原版不移動游標，只把點擊訊息送進遊戲視窗。\r\n" +
-                "如果背景點擊在遊戲裡沒反應（例如滑鼠不在那個遊戲視窗上時），再勾這個：\r\n" +
-                "點擊前把游標移到目標位置，點完約 0.16 秒後移回原處。");
-            _grpOptions.Controls.Add(_chkMoveCursor);
-
-            var clickPanel = new Panel();
-            clickPanel.SetBounds(8, 102, 600, 52);
-            _rbCenter.Text = "點擊位置：遊戲視窗正中央（同原版）";
-            _rbCenter.SetBounds(6, 2, 400, 22);
-            _rbCustom.Text = "自訂";
-            _rbCustom.SetBounds(6, 27, 56, 22);
-            _rbCustom.CheckedChanged += delegate { UpdateClickControls(); };
-            clickPanel.Controls.Add(_rbCenter);
-            clickPanel.Controls.Add(_rbCustom);
-            var lblX = new Label { Text = "X", AutoSize = true, Location = new Point(66, 30) };
-            _numX.Maximum = 10000;
-            _numX.SetBounds(82, 27, 65, 23);
-            var lblY = new Label { Text = "Y", AutoSize = true, Location = new Point(154, 30) };
-            _numY.Maximum = 10000;
-            _numY.SetBounds(170, 27, 65, 23);
-            _btnCapture.Text = "擷取座標（3 秒後）";
-            _btnCapture.SetBounds(245, 25, 150, 27);
-            _btnCapture.Click += OnCaptureClick;
-            clickPanel.Controls.AddRange(new Control[] { lblX, _numX, lblY, _numY, _btnCapture });
-            _grpOptions.Controls.Add(clickPanel);
-
+            // ---- 選項：只留拍照模式；其他固定為原版的做法（背景送出、左鍵點視窗正中央） ----
             _chkCtrlT.Text = "執行時切到拍照模式（Ctrl+T 隱藏 UI）";
-            _chkCtrlT.SetBounds(14, 164, 260, 22);
-            AddLabel(_grpOptions, "多開時每個視窗錯開 (毫秒)", 300, 167);
-            _numStagger.Maximum = 10000;
-            _numStagger.SetBounds(476, 164, 80, 23);
-            _grpOptions.Controls.AddRange(new Control[] { _cboButton, _chkCtrlT, _numStagger });
+            _chkCtrlT.SetBounds(16, 546, 400, 22);
+            Controls.Add(_chkCtrlT);
 
             // ---- 下方按鈕 ----
             _btnStart.Text = "開始（Ctrl+F10）";
-            _btnStart.SetBounds(12, 758, 130, 32);
+            _btnStart.SetBounds(12, 576, 130, 32);
             _btnStart.Click += delegate { StartRun(); };
             _btnStop.Text = "停止";
-            _btnStop.SetBounds(150, 758, 80, 32);
+            _btnStop.SetBounds(150, 576, 80, 32);
             _btnStop.Click += delegate { StopRun("已停止"); };
             _btnSave.Text = "儲存設定";
-            _btnSave.SetBounds(238, 758, 90, 32);
+            _btnSave.SetBounds(238, 576, 90, 32);
             _btnSave.Click += delegate { SaveSettings(); _lblStatus.Text = "設定已儲存"; };
-            _lblStatus.SetBounds(338, 756, 290, 44);
+            _lblStatus.SetBounds(338, 574, 290, 44);
             Controls.AddRange(new Control[] { _btnStart, _btnStop, _btnSave, _lblStatus });
         }
 
@@ -580,7 +507,7 @@ namespace XiaoYaOpt
             _btnAddSlot.Enabled = p.Slots.Count < Profile.MaxSlots;
             _lblSlotCount.Text = string.Format("共 {0} 格（{1}～{2} 格）", p.Slots.Count, Profile.MinSlots, Profile.MaxSlots);
             _lblHint.Text = _db == null
-                ? "尚未載入技能表：按「技能表…」選擇 技能表.csv 後，就能依職業選擇技能並自動帶入時間。"
+                ? "找不到技能表：把 技能表.csv 放在 XiaoYaOpt.exe 旁邊後重新開啟，就能依職業選擇技能並自動帶入時間。"
                 : "選好職業後，在「技能」欄挑選技能與等級，技能時間和延遲時間會自動帶入（仍可手動修改）。";
             _loadingEditor = false;
         }
@@ -765,7 +692,7 @@ namespace XiaoYaOpt
             if (entry == null || !(_cboLv[i].SelectedItem is int)) return;
             int lv = (int)_cboLv[i].SelectedItem;
             var temp = new SlotData { SkillName = entry.EnName, SkillLevel = lv, IntervalMs = (int)_numInterval[i].Value, DelayMs = (int)_numDelay[i].Value };
-            bool ok = GameShortcuts.ApplySuggestion(temp, _db);
+            bool ok = TimingAdvisor.Apply(temp, _db);
             _numInterval[i].Value = Clamp(_numInterval[i], temp.IntervalMs);
             _numDelay[i].Value = Clamp(_numDelay[i], temp.DelayMs);
             _chkEnabled[i].Checked = ok;
@@ -1018,88 +945,19 @@ namespace XiaoYaOpt
             RefreshProfileCombo(_current);
         }
 
-        private void ImportFromGame()
-        {
-            EditorToProfile(_current);
-            using (var dlg = new ImportDialog(_gameDir, _db, _store, _current))
-            {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                _gameDir = dlg.GameDir;
-                Profile target;
-                if (dlg.CreateNew)
-                {
-                    target = new Profile(dlg.NewName);
-                    _store.Add(target);
-                }
-                else target = _current;
-                int skipped = GameShortcuts.ApplyTo(target, dlg.Selected, _db);
-                if (_db != null)
-                {
-                    string main, sub;
-                    _db.GuessJobs(dlg.Selected.Shortcuts.Where(s => s.SkillName != null).Select(s => s.SkillName), out main, out sub);
-                    target.Job = main;
-                    // 副職業是整個體系；和主職業同體系的技能不需要副職業。
-                    string subSystem = Jobs.SystemOfJob(sub);
-                    target.SubJob = subSystem.Length > 0 && subSystem != Jobs.SystemOfJob(main) && EnsureDualJobData(false) ? subSystem : "";
-                }
-                _store.Save(target);
-                _current = target;
-                ProfileToEditor(_current);
-                RefreshProfileCombo(_current);
-                _lblStatus.Text = string.Format("已從 {0} 匯入到「{1}」{2}", Path.GetFileName(dlg.Selected.Path), target.Name,
-                    skipped > 0 ? string.Format("（{0} 個超過 {1} 格未匯入）", skipped, Profile.MaxSlots) : "");
-                SaveSettings();
-            }
-        }
-
-        private void ChooseSkillDb()
-        {
-            using (var dlg = new OpenFileDialog { Filter = "技能表 (*.csv)|*.csv|所有檔案 (*.*)|*.*", Title = "選擇 技能表.csv" })
-            {
-                if (File.Exists(_skillDbPath)) dlg.FileName = _skillDbPath;
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                EditorToProfile(_current);
-                _skillDbPath = dlg.FileName;
-                LoadSkillDb(true);
-                ProfileToEditor(_current);
-                SaveSettings();
-            }
-        }
-
-        private void LoadSkillDb(bool showErrors)
+        /// <summary>載入 exe 旁邊的「技能表.csv」（找不到時再找與 repo 同層的「技能資料」資料夾）。</summary>
+        private void LoadSkillDb()
         {
             _db = null;
-            string path = _skillDbPath;
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            string path = new[]
             {
-                // 預設位置：exe 旁邊，或與「優化版」同層的「技能資料」資料夾
-                foreach (string cand in new[]
-                {
-                    Path.Combine(_baseDir, "技能表.csv"),
-                    Path.GetFullPath(Path.Combine(_baseDir, @"..\..\技能資料\技能表.csv")),
-                    Path.GetFullPath(Path.Combine(_baseDir, @"..\技能資料\技能表.csv"))
-                })
-                {
-                    if (File.Exists(cand)) { path = cand; break; }
-                }
-            }
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                _lblDb.Text = "未載入技能表";
-                return;
-            }
-            try
-            {
-                _db = SkillDb.Load(path);
-                _skillDbPath = path;
-                _lblDb.Text = "技能表：" + Path.GetFileName(path) + "（" + _db.Count + " 筆）";
-                _tip.SetToolTip(_btnDb, "目前的技能表：" + path + "（" + _db.Count + " 筆）");
-            }
-            catch (Exception ex)
-            {
-                _lblDb.Text = "技能表讀取失敗";
-                if (showErrors) MessageBox.Show(this, "技能表讀取失敗：" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
+                Path.Combine(_baseDir, "技能表.csv"),
+                Path.GetFullPath(Path.Combine(_baseDir, @"..\..\技能資料\技能表.csv")),
+                Path.GetFullPath(Path.Combine(_baseDir, @"..\技能資料\技能表.csv"))
+            }.FirstOrDefault(File.Exists);
+            if (path == null) return;
+            try { _db = SkillDb.Load(path); }
+            catch (Exception ex) { _lblStatus.Text = "技能表讀取失敗：" + ex.Message; }
         }
 
         // =====================================================================
@@ -1172,16 +1030,14 @@ namespace XiaoYaOpt
 
         private RunConfig ReadRunConfig()
         {
+            // 介面上只留拍照模式；其餘固定為原版的做法
             return new RunConfig
             {
-                Mode = _rbForeground.Checked ? SendMode.Foreground : SendMode.Background,
-                RightButton = _cboButton.SelectedIndex == 1,
-                ClickCenter = !_rbCustom.Checked,
-                ClickX = (int)_numX.Value,
-                ClickY = (int)_numY.Value,
-                StaggerMs = (int)_numStagger.Value,
+                Mode = SendMode.Background,
+                RightButton = false,
+                StaggerMs = DefaultStaggerMs,
                 SendCtrlT = _chkCtrlT.Checked,
-                MoveCursorForClick = _chkMoveCursor.Checked
+                MoveCursorForClick = false
             };
         }
 
@@ -1203,7 +1059,7 @@ namespace XiaoYaOpt
             _btnRefresh.Enabled = !running;
             _grid.Enabled = !running;
             _grpProfile.Enabled = !running;
-            _grpOptions.Enabled = !running;
+            _chkCtrlT.Enabled = !running;
             _txtKeyword.Enabled = !running;
             if (running) _uiTimer.Start(); else _uiTimer.Stop();
         }
@@ -1215,42 +1071,6 @@ namespace XiaoYaOpt
         }
 
         // =====================================================================
-        // 擷取座標
-        // =====================================================================
-
-        private void OnCaptureClick(object sender, EventArgs e)
-        {
-            _btnCapture.Enabled = false;
-            _lblStatus.Text = "3 秒內把滑鼠移到遊戲視窗內的目標位置…";
-            _captureTimer.Start();
-        }
-
-        private void OnCaptureTick(object sender, EventArgs e)
-        {
-            _captureTimer.Stop();
-            _btnCapture.Enabled = true;
-            Native.POINT p;
-            Native.GetCursorPos(out p);
-            IntPtr root = Native.GetAncestor(Native.WindowFromPoint(p), Native.GA_ROOT);
-            if (root == IntPtr.Zero || root == Handle)
-            {
-                _lblStatus.Text = "游標不在遊戲視窗上，請再試一次";
-                return;
-            }
-            Native.ScreenToClient(root, ref p);
-            _numX.Value = Math.Max(0, Math.Min(_numX.Maximum, p.X));
-            _numY.Value = Math.Max(0, Math.Min(_numY.Maximum, p.Y));
-            _rbCustom.Checked = true;
-            _lblStatus.Text = string.Format("已擷取「{0}」內座標 ({1}, {2})", Native.GetTitle(root), p.X, p.Y);
-        }
-
-        private void UpdateClickControls()
-        {
-            _numX.Enabled = _rbCustom.Checked;
-            _numY.Enabled = _rbCustom.Checked;
-        }
-
-        // =====================================================================
         // 設定檔
         // =====================================================================
 
@@ -1258,32 +1078,19 @@ namespace XiaoYaOpt
         {
             var s = new Settings(_settingsPath);
             _txtKeyword.Text = s.Get("keyword", "eco");
-            bool fg = s.GetInt("mode", 0) == 1;
-            _rbForeground.Checked = fg;
-            _rbBackground.Checked = !fg;
-            _cboButton.SelectedIndex = s.GetBool("mouse.right", false) ? 1 : 0;
-            bool center = s.GetBool("mouse.center", true);
-            _rbCenter.Checked = center;
-            _rbCustom.Checked = !center;
-            _numX.Value = Clamp(_numX, s.GetInt("mouse.x", 0));
-            _numY.Value = Clamp(_numY, s.GetInt("mouse.y", 0));
-            _numStagger.Value = Clamp(_numStagger, s.GetInt("stagger", 50));
-            _chkMoveCursor.Checked = s.GetBool("mouse.moveCursor", false);
             _chkCtrlT.Checked = s.GetBool("ctrlT", true);
             _gameDir = s.Get("gameDir", "");
-            _skillDbPath = s.Get("skillDb", "");
             foreach (string k in s.Keys())
             {
                 uint id;
                 if (k.StartsWith("possess.", StringComparison.Ordinal) && uint.TryParse(k.Substring(8), out id))
                     _possess.Overrides[id] = s.GetBool(k, false);
             }
-            UpdateClickControls();
 
             foreach (string k in s.Keys())
                 if (k.StartsWith("assign.", StringComparison.Ordinal)) _assignByTitle[k.Substring(7)] = s.Get(k, "");
 
-            LoadSkillDb(false);
+            LoadSkillDb();
             EnsureDualJobData(false);
             _store.Load();
             MigrateOldSlots(s);
@@ -1319,16 +1126,8 @@ namespace XiaoYaOpt
 
             var s = new Settings(_settingsPath, false);
             s.Set("keyword", _txtKeyword.Text.Trim());
-            s.Set("mode", _rbForeground.Checked ? 1 : 0);
-            s.Set("mouse.right", _cboButton.SelectedIndex == 1);
-            s.Set("mouse.center", !_rbCustom.Checked);
-            s.Set("mouse.x", (int)_numX.Value);
-            s.Set("mouse.y", (int)_numY.Value);
-            s.Set("stagger", (int)_numStagger.Value);
-            s.Set("mouse.moveCursor", _chkMoveCursor.Checked);
             s.Set("ctrlT", _chkCtrlT.Checked);
             s.Set("gameDir", _gameDir);
-            s.Set("skillDb", _skillDbPath);
             foreach (var kv in _possess.Overrides) s.Set("possess." + kv.Key, kv.Value);
             s.Set("profile", _current != null ? _current.Name : ProfileStore.DefaultName);
             s.Set("migrated", true);

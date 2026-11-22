@@ -73,41 +73,6 @@ namespace XiaoYaOpt
             return _byJob.TryGetValue(jobSlug ?? "", out list) ? list : new List<SkillEntry>();
         }
 
-        /// <summary>找出包含最多指定技能的職業（用於匯入時自動判斷職業）。</summary>
-        public string GuessJob(IEnumerable<string> enNames)
-        {
-            string main, sub;
-            GuessJobs(enNames, out main, out sub);
-            return main;
-        }
-
-        /// <summary>
-        /// 依技能判斷主職業與副職業：主職業 = 涵蓋最多技能的職業；
-        /// 副職業 = 涵蓋剩下技能最多的職業（剩下的技能都已涵蓋時為空字串）。
-        /// </summary>
-        public void GuessJobs(IEnumerable<string> enNames, out string main, out string sub)
-        {
-            var wanted = new HashSet<string>();
-            foreach (string n in enNames) { string k = NameKey(n); if (k != null) wanted.Add(k); }
-            main = BestJob(wanted, null);
-            var rest = new HashSet<string>(wanted);
-            if (main.Length > 0) foreach (var e in SkillsOf(main)) rest.Remove(NameKey(e.EnName));
-            sub = rest.Count > 0 ? BestJob(rest, main) : "";
-        }
-
-        private string BestJob(HashSet<string> wanted, string exclude)
-        {
-            string best = ""; int bestCount = 0;
-            foreach (var kv in _byLine)
-            {
-                if (kv.Key.Length == 0 || kv.Key == exclude) continue;
-                int c = 0;
-                foreach (var e in kv.Value) if (wanted.Contains(NameKey(e.EnName))) c++;
-                if (c > bestCount) { bestCount = c; best = kv.Key; }
-            }
-            return best;
-        }
-
         public int Count { get { return _byKey.Count; } }
         public string Path { get; private set; }
 
@@ -293,6 +258,37 @@ namespace XiaoYaOpt
         public const int BuffMarginMs = 3000;     // 增益技在效果結束前多久重放
         public const int MinIntervalMs = 1000;
         public const int UnknownBuffIntervalMs = 60000; // 增益技能查不到持續時間時的保守預設
+
+        /// <summary>
+        /// 依技能表重新計算一個欄位的名稱與時間。
+        /// 回傳 true 表示時間可信、可以直接啟用；false 表示查不到資料或需要人工確認（例如增益技能沒有持續時間）。
+        /// </summary>
+        public static bool Apply(SlotData d, SkillDb db)
+        {
+            if (string.IsNullOrEmpty(d.SkillName)) return false;
+            SkillInfo info = db != null ? db.Find(d.SkillName, d.SkillLevel) : null;
+            if (info == null)
+            {
+                d.SkillLabel = d.SkillName + " Lv" + d.SkillLevel + "（技能表查無資料）";
+                return false;
+            }
+            d.SkillLabel = (info.ZhName.Length > 0 ? info.ZhName : d.SkillName) + " Lv" + d.SkillLevel;
+            if (!info.CastSec.HasValue && !info.CooldownSec.HasValue && !info.DurationSec.HasValue)
+            {
+                d.SkillLabel += "（無官網時間）";
+                return false;
+            }
+            d.DelayMs = SuggestDelayMs(info);
+            if (info.IsBuff && !info.DurationSec.HasValue)
+            {
+                // 增益技能不知道效果多久：用冷卻時間會變成一直重放（開關型技能還會一直開開關關），改給保守值並要求確認。
+                d.IntervalMs = UnknownBuffIntervalMs;
+                d.SkillLabel += "（持續時間不明，請確認）";
+                return false;
+            }
+            d.IntervalMs = SuggestIntervalMs(info);
+            return true;
+        }
 
         public static int SuggestIntervalMs(SkillInfo s)
         {

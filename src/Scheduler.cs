@@ -30,10 +30,6 @@ namespace XiaoYaOpt
     {
         public SendMode Mode;
         public bool RightButton;
-        /// <summary>true：點擊視窗正中央（同原版）；false：使用 ClickX/ClickY。</summary>
-        public bool ClickCenter;
-        public int ClickX;
-        public int ClickY;
         public int StaggerMs;
         /// <summary>ECO 的 Ctrl+T 是切換拍照模式（隱藏 UI）。開始時送一次進入、停止時再送一次離開（同原版）。</summary>
         public bool SendCtrlT;
@@ -315,15 +311,12 @@ namespace XiaoYaOpt
                 new IntPtr(vk), KeyLParam(vk, up));
         }
 
-        private Native.POINT ClickPoint(IntPtr hwnd)
+        /// <summary>點擊位置：遊戲視窗正中央（同原版）。</summary>
+        private static Native.POINT ClickPoint(IntPtr hwnd)
         {
-            if (_cfg.ClickCenter)
-            {
-                Native.RECT rc;
-                Native.GetClientRect(hwnd, out rc);
-                return new Native.POINT { X = rc.Right / 2, Y = rc.Bottom / 2 };
-            }
-            return new Native.POINT { X = _cfg.ClickX, Y = _cfg.ClickY };
+            Native.RECT rc;
+            Native.GetClientRect(hwnd, out rc);
+            return new Native.POINT { X = rc.Right / 2, Y = rc.Bottom / 2 };
         }
 
         /// <summary>
