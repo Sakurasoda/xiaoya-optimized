@@ -34,6 +34,8 @@ namespace XiaoYaOpt
         public string SubJob = "";
         /// <summary>副職業等級；0 表示不限（列出體系內全部可學的技能與等級）。</summary>
         public int SubJobLevel;
+        /// <summary>技能清單只顯示憑依時可用的技能。</summary>
+        public bool PossessOnly;
         /// <summary>技能格（1～15 格，可自行增減）。</summary>
         public List<SlotData> Slots = new List<SlotData>();
 
@@ -47,7 +49,7 @@ namespace XiaoYaOpt
 
         public Profile Clone(string newName)
         {
-            var p = new Profile(newName, 0) { Job = Job, SubJob = SubJob, SubJobLevel = SubJobLevel };
+            var p = new Profile(newName, 0) { Job = Job, SubJob = SubJob, SubJobLevel = SubJobLevel, PossessOnly = PossessOnly };
             foreach (var d in Slots) p.Slots.Add(d.Clone());
             return p;
         }
@@ -101,6 +103,7 @@ namespace XiaoYaOpt
                     if (p.SubJob.Length > 0 && !int.TryParse(p.SubJob, out sysId))
                         p.SubJob = Jobs.SystemOfJob(p.SubJob); // 舊版存的是單一職業代號，轉成所屬體系
                     p.SubJobLevel = s.GetInt("subJobLevel", 0);
+                    p.PossessOnly = s.GetBool("possessOnly", false);
                     // 舊版沒有 slotCount，固定 6 格
                     int count = Math.Max(Profile.MinSlots, Math.Min(Profile.MaxSlots, s.GetInt("slotCount", Profile.DefaultSlots)));
                     p.Slots.Clear();
@@ -132,6 +135,7 @@ namespace XiaoYaOpt
             s.Set("job", p.Job ?? "");
             s.Set("subJob", p.SubJob ?? "");
             s.Set("subJobLevel", p.SubJobLevel);
+            s.Set("possessOnly", p.PossessOnly);
             s.Set("slotCount", p.Slots.Count);
             for (int i = 0; i < p.Slots.Count; i++)
             {

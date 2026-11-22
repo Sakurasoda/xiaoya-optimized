@@ -55,6 +55,10 @@ namespace XiaoYaOpt
         private DualJobDb _dj;
         private SkillIcons _icons;
         private readonly ToolTip _tip = new ToolTip();
+        private readonly CheckBox _chkPossess = new CheckBox();
+        private readonly Possession _possess = new Possession();
+        private readonly ContextMenuStrip _skillMenu = new ContextMenuStrip();
+        private int _menuSlot = -1;
 
         /// <summary>技能下拉的項目：主職業技能直接顯示名稱，副職業技能前面加「［副］」。</summary>
         private sealed class SkillChoice
@@ -266,6 +270,7 @@ namespace XiaoYaOpt
                     DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 20
                 };
                 _cboSkill[i].DrawItem += DrawSkillItem;
+                _cboSkill[i].ContextMenuStrip = _skillMenu;
                 _cboSkill[i].SetBounds(106, y - 1, 166, 26);
                 _cboSkill[i].SelectedIndexChanged += delegate { OnSkillChanged(slot); };
                 _cboLv[i] = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -277,7 +282,8 @@ namespace XiaoYaOpt
                 _chkMouse[i].SetBounds(412, y, 58, 22);
                 _numDelay[i] = MakeNumber(0, 60000, 200);
                 _numDelay[i].SetBounds(474, y, 80, 23);
-                _btnDel[i] = new Button { Text = "✕", FlatStyle = FlatStyle.Flat, ForeColor = Color.Firebrick, TabStop = false };
+                // 用「×」而不是「✕」：後者會被 Windows 以彩色表情字型繪製，顏色不一致
+                _btnDel[i] = new Button { Text = "×", FlatStyle = FlatStyle.Flat, ForeColor = Color.Firebrick, TabStop = false };
                 _btnDel[i].FlatAppearance.BorderSize = 0;
                 _btnDel[i].SetBounds(556, y, 24, 23);
                 _btnDel[i].Click += delegate { RemoveSlot(slot); };
@@ -287,9 +293,32 @@ namespace XiaoYaOpt
             _btnAddSlot.Text = "＋ 新增一格";
             _btnAddSlot.SetBounds(12, 288, 100, 26);
             _btnAddSlot.Click += delegate { AddSlot(); };
-            _lblSlotCount.SetBounds(118, 293, 300, 20);
+            _lblSlotCount.SetBounds(118, 293, 150, 20);
             _lblSlotCount.ForeColor = Color.DimGray;
-            _grpProfile.Controls.AddRange(new Control[] { _btnAddSlot, _lblSlotCount });
+            _chkPossess.Text = "只顯示憑依時可用的技能";
+            _chkPossess.SetBounds(290, 290, 220, 22);
+            _chkPossess.CheckedChanged += delegate { OnPossessFilterChanged(); };
+            _tip.SetToolTip(_chkPossess, "憑依時可用的技能在清單右側標示「憑」。這是依技能類型推估的；不準時在技能欄按右鍵即可修正。");
+            _grpProfile.Controls.AddRange(new Control[] { _btnAddSlot, _lblSlotCount, _chkPossess });
+
+            var miYes = new ToolStripMenuItem("標記：憑依時可用");
+            var miNo = new ToolStripMenuItem("標記：憑依時不可用");
+            var miAuto = new ToolStripMenuItem("恢復自動判斷");
+            miYes.Click += delegate { SetPossessOverride(true); };
+            miNo.Click += delegate { SetPossessOverride(false); };
+            miAuto.Click += delegate { SetPossessOverride(null); };
+            _skillMenu.Items.AddRange(new ToolStripItem[] { miYes, miNo, miAuto });
+            _skillMenu.Opening += (s, e) =>
+            {
+                _menuSlot = Array.IndexOf(_cboSkill, _skillMenu.SourceControl);
+                var entry = _menuSlot >= 0 ? ChosenEntry(_menuSlot) : null;
+                if (entry == null || entry.Id == 0) { e.Cancel = true; return; }
+                int state = _possess.OverrideState(entry);
+                miYes.Checked = state == 1;
+                miNo.Checked = state == 2;
+                miAuto.Checked = state == 0;
+                miAuto.Text = "恢復自動判斷（推估：" + (Possession.Guess(entry) ? "可用" : "不可用") + "）";
+            };
             _lblHint.SetBounds(12, 318, 594, 34);
             _lblHint.ForeColor = Color.DimGray;
             _grpProfile.Controls.Add(_lblHint);
@@ -517,6 +546,8 @@ namespace XiaoYaOpt
             SelectJob(_cboJob, p.Job);
             SelectJob(_cboSubJob, p.SubJob);
             _numSubLv.Value = Clamp(_numSubLv, p.SubJobLevel);
+            _chkPossess.Checked = p.PossessOnly;
+            _chkPossess.Enabled = _db != null;
             _cboJob.Enabled = _cboSubJob.Enabled = _db != null;
             _numSubLv.Enabled = _db != null && !string.IsNullOrEmpty(p.SubJob);
             _slotPanel.SuspendLayout();
@@ -612,7 +643,14 @@ namespace XiaoYaOpt
         /// 主職業與副職業可選的技能（主職業在前；兩邊都有的技能只列一次，算主職業）。
         /// 副職業技能來自遊戲的 dualjob_skill_learn.csv：只列體系內學得到的技能，等級上限也依表格（與副職業等級）限制。
         /// </summary>
-        private List<SkillChoice> ChoicesFor(Profile p)
+        private List<SkillChoice> ChoicesFor(Profile p, bool applyPossessFilter = true)
+        {
+            var list = ChoicesForJobs(p);
+            if (applyPossessFilter && p.PossessOnly) list = list.Where(c => _possess.IsUsable(c.Entry)).ToList();
+            return list;
+        }
+
+        private List<SkillChoice> ChoicesForJobs(Profile p)
         {
             var list = new List<SkillChoice>();
             if (_db == null) return list;
@@ -754,12 +792,12 @@ namespace XiaoYaOpt
                 _lblHint.Text = "沒有載入副職業表（需要遊戲資料夾），所以先不套用副職業。";
                 return;
             }
-            // 不屬於主職業或副職業的技能清掉並停用，避免誤送。
+            // 不屬於主職業或副職業的技能清掉並停用，避免誤送（憑依過濾只影響清單顯示，不會清掉已選的技能）。
             var choices = ChoicesFor(_current);
             int cleared = 0;
             if (_db != null)
             {
-                var names = new HashSet<string>(choices.Select(x => Normalize(x.Entry.EnName)));
+                var names = new HashSet<string>(ChoicesFor(_current, false).Select(x => Normalize(x.Entry.EnName)));
                 foreach (var d in _current.Slots)
                 {
                     if (string.IsNullOrEmpty(d.SkillName) || names.Contains(Normalize(d.SkillName))) continue;
@@ -818,10 +856,47 @@ namespace XiaoYaOpt
             x += 22;
             bool selected = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
             Color fore = selected ? SystemColors.HighlightText : (choice == null ? Color.DimGray : SystemColors.ControlText);
+            int right = e.Bounds.Right;
+            if (choice != null && _possess.IsUsable(choice.Entry))
+            {
+                // 憑依時可用：右側標「憑」；手動標記的加「＊」
+                string mark = _possess.OverrideState(choice.Entry) == 1 ? "憑＊" : "憑";
+                Size sz = TextRenderer.MeasureText(mark, e.Font);
+                right -= sz.Width + 2;
+                TextRenderer.DrawText(e.Graphics, mark, e.Font, new Rectangle(right, e.Bounds.Top, sz.Width + 2, e.Bounds.Height),
+                    selected ? SystemColors.HighlightText : Color.SeaGreen, TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            }
             TextRenderer.DrawText(e.Graphics, item.ToString(), e.Font,
-                new Rectangle(x, e.Bounds.Top, e.Bounds.Right - x, e.Bounds.Height), fore,
+                new Rectangle(x, e.Bounds.Top, right - x, e.Bounds.Height), fore,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             e.DrawFocusRectangle();
+        }
+
+        private void OnPossessFilterChanged()
+        {
+            if (_loadingEditor || _current == null) return;
+            EditorToProfile(_current);
+            _current.PossessOnly = _chkPossess.Checked;
+            ProfileToEditor(_current);
+            int shown = ChoicesFor(_current).Count, all = ChoicesFor(_current, false).Count;
+            _lblHint.Text = _current.PossessOnly
+                ? string.Format("只顯示憑依時可用的技能：{0}／{1} 個（依技能類型推估；不準時在技能欄按右鍵修正）。已選的技能不會被清除。", shown, all)
+                : string.Format("顯示全部技能：{0} 個。", all);
+        }
+
+        /// <summary>右鍵選單：手動修正某個技能「憑依時可否使用」（所有角色設定共用）。</summary>
+        private void SetPossessOverride(bool? usable)
+        {
+            if (_menuSlot < 0) return;
+            var entry = ChosenEntry(_menuSlot);
+            if (entry == null) return;
+            _possess.SetOverride(entry, usable);
+            EditorToProfile(_current);
+            ProfileToEditor(_current);
+            _lblHint.Text = string.Format("「{0}」憑依時{1}。", entry.Display,
+                usable.HasValue ? (usable.Value ? "可用（手動標記）" : "不可用（手動標記）")
+                                : "恢復自動判斷：" + (Possession.Guess(entry) ? "可用" : "不可用"));
+            SaveSettings();
         }
 
         /// <summary>從正在執行的遊戲程序（視窗清單裡的視窗、或名為 eco 的程序）找出遊戲資料夾。</summary>
@@ -1190,6 +1265,12 @@ namespace XiaoYaOpt
             _chkCtrlT.Checked = s.GetBool("ctrlT", true);
             _gameDir = s.Get("gameDir", "");
             _skillDbPath = s.Get("skillDb", "");
+            foreach (string k in s.Keys())
+            {
+                uint id;
+                if (k.StartsWith("possess.", StringComparison.Ordinal) && uint.TryParse(k.Substring(8), out id))
+                    _possess.Overrides[id] = s.GetBool(k, false);
+            }
             UpdateClickControls();
 
             foreach (string k in s.Keys())
@@ -1240,6 +1321,7 @@ namespace XiaoYaOpt
             s.Set("ctrlT", _chkCtrlT.Checked);
             s.Set("gameDir", _gameDir);
             s.Set("skillDb", _skillDbPath);
+            foreach (var kv in _possess.Overrides) s.Set("possess." + kv.Key, kv.Value);
             s.Set("profile", _current != null ? _current.Name : ProfileStore.DefaultName);
             s.Set("migrated", true);
             foreach (var kv in _assignByTitle)

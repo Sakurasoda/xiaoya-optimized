@@ -30,6 +30,7 @@ namespace XiaoYaOpt
     {
         public uint Id;
         public string Type = "";
+        public string JpName = "";
         public string EnName;
         public string ZhName;
         public int JobLevel;
@@ -115,7 +116,8 @@ namespace XiaoYaOpt
                 int cId = header.IndexOf("技能ID"), cLv = header.IndexOf("等級"), cZh = header.IndexOf("中文名稱"),
                     cOrig = header.IndexOf("原文名稱"), cWikiEn = header.IndexOf("官網英文名"),
                     cCast = header.IndexOf("詠唱時間(秒)"), cCd = header.IndexOf("冷卻時間(秒)"), cDur = header.IndexOf("持續時間(秒)"),
-                    cType = header.IndexOf("類型"), cJob = header.IndexOf("職業"), cJobLv = header.IndexOf("習得職業等級");
+                    cType = header.IndexOf("類型"), cJob = header.IndexOf("職業"), cJobLv = header.IndexOf("習得職業等級"),
+                    cJp = header.IndexOf("日文名稱");
                 var entries = new Dictionary<string, Dictionary<string, SkillEntry>>(); // job -> nameKey -> entry
                 if (cLv < 0 || cZh < 0 || cOrig < 0 || cWikiEn < 0 || cCast < 0 || cCd < 0 || cDur < 0)
                     throw new InvalidDataException("技能表缺少必要欄位（等級、中文名稱、原文名稱、官網英文名、詠唱/冷卻/持續時間）");
@@ -148,7 +150,7 @@ namespace XiaoYaOpt
                         if (!db._byId.TryGetValue(id, out byId))
                             db._byId[id] = byId = new SkillEntry
                             {
-                                Id = id, Type = info.Type,
+                                Id = id, Type = info.Type, JpName = cJp >= 0 ? row[cJp].Trim() : "",
                                 EnName = row[cWikiEn].Length > 0 ? row[cWikiEn] : row[cOrig],
                                 ZhName = row[cZh].Trim()
                             };
@@ -169,7 +171,11 @@ namespace XiaoYaOpt
                         string nk = NameKey(row[cWikiEn]);
                         SkillEntry e;
                         if (!map.TryGetValue(nk, out e))
-                            map[nk] = e = new SkillEntry { Id = id, EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type };
+                            map[nk] = e = new SkillEntry
+                            {
+                                Id = id, EnName = row[cWikiEn], ZhName = row[cZh].Trim(), JobLevel = jobLv, Type = info.Type,
+                                JpName = cJp >= 0 ? row[cJp].Trim() : ""
+                            };
                         if (!e.Levels.ContainsKey(lv)) e.Levels[lv] = info;
                     }
                 }
