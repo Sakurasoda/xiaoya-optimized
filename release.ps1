@@ -15,6 +15,12 @@ New-Item -ItemType Directory -Force $stage | Out-Null
 Copy-Item (Join-Path $root 'bin\XiaoYaOpt.exe') $stage
 Copy-Item (Join-Path $root 'data\*.csv') $stage
 Copy-Item (Join-Path $root 'README.md') $stage
+# Screenshots used by the README guide (same relative path, so the links work after unzipping)
+$images = Join-Path $root 'docs\images'
+if (Test-Path $images) {
+    New-Item -ItemType Directory -Force (Join-Path $stage 'docs\images') | Out-Null
+    Copy-Item (Join-Path $images '*.png') (Join-Path $stage 'docs\images')
+}
 
 $zip = Join-Path $dist "XiaoYaOpt-$Version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
