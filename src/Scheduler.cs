@@ -33,6 +33,8 @@ namespace XiaoYaOpt
         public int StaggerMs;
         /// <summary>ECO 的 Ctrl+T 是切換拍照模式（隱藏 UI）。開始時送一次進入、停止時再送一次離開（同原版）。</summary>
         public bool SendCtrlT;
+        /// <summary>已經用「拍照模式」按鈕手動切進拍照模式的視窗：開始時不再送、停止時也不切回。</summary>
+        public HashSet<IntPtr> AlreadyInPhotoMode = new HashSet<IntPtr>();
         /// <summary>
         /// 背景點擊時先把實體游標移到點擊位置、點完再移回（游標會瞬間跳動）。
         /// false = 同原版，只送滑鼠訊息、不動游標。
@@ -63,6 +65,12 @@ namespace XiaoYaOpt
 
         private const int PressMs = 30;
         private const int MinIntervalMs = 50;
+        /// <summary>同步送按鍵時最多等遊戲處理多久（某個遊戲卡住時不會拖住其他視窗）。</summary>
+        private const uint KeySendTimeoutMs = 500;
+        /// <summary>放開技能鍵後等多久才點滑鼠（原版 0）：讓遊戲先進入選目標狀態，點擊太早到會被忽略。</summary>
+        private const int ClickGapMs = 150;
+        /// <summary>背景點擊（只送訊息）時滑鼠按住的時間（原版 30）：按下和放開落在同一幀時遊戲可能認不到。</summary>
+        private const int BgClickHoldMs = 100;
         /// <summary>背景點擊時滑鼠按住的時間（要讓遊戲至少跑過一幀才會認到）。</summary>
         private const int ClickHoldMs = 100;
         /// <summary>放開後游標再停留的時間，讓遊戲處理完放開才把游標移回去。</summary>
@@ -144,7 +152,7 @@ namespace XiaoYaOpt
                 foreach (IntPtr hwnd in _windows)
                 {
                     if (_stop) break;
-                    if (!Native.IsWindow(hwnd)) continue;
+                    if (!Native.IsWindow(hwnd) || _cfg.AlreadyInPhotoMode.Contains(hwnd)) continue;
                     SendCtrlT(hwnd);
                     _photoMode.Add(hwnd);
                 }
@@ -236,8 +244,9 @@ namespace XiaoYaOpt
                         if (_cfg.Mode == SendMode.Background)
                         {
                             SendKeyMessage(job.Hwnd, slot.VirtualKey, false);
+                            now = _clock.ElapsedMilliseconds; // 從遊戲處理完按下起算（同原版）
                             Add(now + PressMs, job.Hwnd, job.Slot, JobKind.KeyUp);
-                            if (slot.Mouse) Add(now + PressMs, job.Hwnd, job.Slot, JobKind.MouseDown);
+                            if (slot.Mouse) Add(now + PressMs + ClickGapMs, job.Hwnd, job.Slot, JobKind.MouseDown);
                         }
                         else
                         {
@@ -251,7 +260,7 @@ namespace XiaoYaOpt
                         Interlocked.Increment(ref _sent);
 
                         long pressEnd = now + (_cfg.Mode == SendMode.Background
-                            ? PressMs + (!slot.Mouse ? 0 : _cfg.MoveCursorForClick ? ClickHoldMs + ClickSettleMs : PressMs)
+                            ? PressMs + (!slot.Mouse ? 0 : ClickGapMs + (_cfg.MoveCursorForClick ? ClickHoldMs + ClickSettleMs : BgClickHoldMs))
                             : 0);
                         _busyUntil[job.Hwnd] = pressEnd + Math.Max(0, slot.DelayMs);
 
@@ -274,9 +283,9 @@ namespace XiaoYaOpt
                     }
                     else
                     {
-                        // 同原版 FUN_00403712：移動 → 按下，30ms 後再 移動 → 放開，不動實體游標。
+                        // 同原版 FUN_00403712：移動 → 按下，按住後再 移動 → 放開，不動實體游標。
                         PostMouse(job.Hwnd, false);
-                        Add(now + PressMs, job.Hwnd, job.Slot, JobKind.MouseUp);
+                        Add(now + BgClickHoldMs, job.Hwnd, job.Slot, JobKind.MouseUp);
                     }
                     break;
 
@@ -302,13 +311,14 @@ namespace XiaoYaOpt
         }
 
         /// <summary>
-        /// 原版用 SendMessage 送技能鍵。這裡改用 SendNotifyMessage：遊戲收到的同樣是「sent」訊息，
-        /// 但不必等遊戲處理完才回來，某個遊戲卡頓時不會拖慢其他視窗的節奏。
+        /// 同原版用 SendMessage 送技能鍵：等遊戲處理完這個按鍵才回來，點擊一定落在遊戲進入選目標狀態之後。
+        /// 加上逾時：某個遊戲卡住時最多等 KeySendTimeoutMs，不會拖住其他視窗。
         /// </summary>
         private static void SendKeyMessage(IntPtr hwnd, int vk, bool up)
         {
-            Native.SendNotifyMessageW(hwnd, up ? Native.WM_KEYUP : Native.WM_KEYDOWN,
-                new IntPtr(vk), KeyLParam(vk, up));
+            IntPtr result;
+            Native.SendMessageTimeoutW(hwnd, up ? Native.WM_KEYUP : Native.WM_KEYDOWN,
+                new IntPtr(vk), KeyLParam(vk, up), Native.SMTO_ABORTIFHUNG, KeySendTimeoutMs, out result);
         }
 
         /// <summary>點擊位置：遊戲視窗正中央（同原版）。</summary>
@@ -368,7 +378,7 @@ namespace XiaoYaOpt
         /// 同原版 FUN_004011c5：Ctrl 用實體按鍵模擬（背景訊息無法讓遊戲認定 Ctrl 被按住），
         /// T 用 PostMessage 送進遊戲視窗。
         /// </summary>
-        private static void SendCtrlT(IntPtr hwnd)
+        internal static void SendCtrlT(IntPtr hwnd)
         {
             const int VK_T = 0x54;
             SendKeyInput(Native.VK_CONTROL, false);

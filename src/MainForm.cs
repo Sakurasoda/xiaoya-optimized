@@ -36,6 +36,11 @@ namespace XiaoYaOpt
         // 視窗清單
         private readonly TextBox _txtKeyword = new TextBox();
         private readonly Button _btnRefresh = new Button();
+        private readonly Button _btnPhoto = new Button();
+        private readonly Button _btnShow = new Button();
+        /// <summary>用「拍照模式」按鈕手動切進拍照模式的視窗。</summary>
+        private readonly HashSet<IntPtr> _photoOn = new HashSet<IntPtr>();
+        private static readonly Color PhotoRowColor = Color.FromArgb(255, 244, 200);
         private readonly DataGridView _grid = new DataGridView();
         private readonly DataGridViewCheckBoxColumn _colUse = new DataGridViewCheckBoxColumn();
         private readonly DataGridViewTextBoxColumn _colTitle = new DataGridViewTextBoxColumn();
@@ -145,7 +150,16 @@ namespace XiaoYaOpt
             _btnRefresh.SetBounds(240, 10, 110, 27);
             _btnRefresh.Click += delegate { RefreshWindows(); };
             Controls.Add(_btnRefresh);
-            AddLabel(this, "勾選要自動按鍵的視窗，並替每個視窗選擇角色設定", 360, 15);
+            _btnPhoto.Text = "拍照模式";
+            _btnPhoto.SetBounds(358, 10, 90, 27);
+            _btnPhoto.Click += delegate { TogglePhotoMode(); };
+            _tip.SetToolTip(_btnPhoto, "對選取的視窗送一次 Ctrl+T，切換拍照模式（隱藏／顯示遊戲 UI）。\n" +
+                "UI 消失的那個就是這一列的視窗；切著的那列會變成黃色，按「開始」時不會再切一次。");
+            _btnShow.Text = "顯示這個視窗";
+            _btnShow.SetBounds(454, 10, 104, 27);
+            _btnShow.Click += delegate { ShowSelectedWindow(); };
+            _tip.SetToolTip(_btnShow, "把選取的遊戲視窗拉到最上層（縮小中會先還原）。雙擊清單裡的一列也可以。");
+            Controls.AddRange(new Control[] { _btnPhoto, _btnShow });
 
             _grid.SetBounds(12, 44, 616, 130);
             _grid.AllowUserToAddRows = false;
@@ -173,6 +187,13 @@ namespace XiaoYaOpt
                 if (_grid.IsCurrentCellDirty) _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
             };
             _grid.CellValueChanged += OnGridValueChanged;
+            _grid.CellDoubleClick += delegate(object s, DataGridViewCellEventArgs e)
+            {
+                // 勾選欄與角色設定下拉雙擊時是在編輯，不跳視窗
+                if (e.RowIndex < 0 || e.ColumnIndex == _colUse.Index || e.ColumnIndex == _colProfile.Index) return;
+                ShowGameWindow(_grid.Rows[e.RowIndex]);
+            };
+            _tip.SetToolTip(_grid, "勾選要自動按鍵的視窗，並替每個視窗選擇角色設定；雙擊一列可把那個視窗拉到最上層。");
             _grid.DataError += delegate(object s, DataGridViewDataErrorEventArgs e) { e.ThrowException = false; };
             Controls.Add(_grid);
 
@@ -395,7 +416,9 @@ namespace XiaoYaOpt
                 int idx = _grid.Rows.Add(keepChecked.Contains(w.Hwnd), w.Title, w.Pid.ToString(), _store.Find(profile).Name);
                 _grid.Rows[idx].Tag = w;
                 ApplyWindowTitle(_grid.Rows[idx]);
+                MarkPhotoRow(_grid.Rows[idx]);
             }
+            _photoOn.RemoveWhere(h => !found.Any(x => x.Hwnd == h)); // 已關閉的視窗不再記
             _lblStatus.Text = string.Format("找到 {0} 個視窗", found.Count);
         }
 
@@ -425,6 +448,57 @@ namespace XiaoYaOpt
             if (Native.GetTitle(w.Hwnd) != want) Native.SetWindowTextW(w.Hwnd, want);
             w.Title = want;
             row.Cells[_colTitle.Index].Value = want;
+        }
+
+        private DataGridViewRow SelectedWindowRow()
+        {
+            var row = _grid.CurrentRow ?? (_grid.SelectedRows.Count > 0 ? _grid.SelectedRows[0] : null);
+            if (row == null || !(row.Tag is WindowItem))
+            {
+                _lblStatus.Text = "請先在清單裡點一下要找的視窗";
+                return null;
+            }
+            if (!Native.IsWindow(((WindowItem)row.Tag).Hwnd))
+            {
+                _lblStatus.Text = "這個視窗已經關閉，請重新整理視窗";
+                return null;
+            }
+            return row;
+        }
+
+        /// <summary>對選取的視窗送 Ctrl+T 切換拍照模式；UI 消失的那個就是這一列。</summary>
+        private void TogglePhotoMode()
+        {
+            var row = SelectedWindowRow();
+            if (row == null) return;
+            var w = (WindowItem)row.Tag;
+            Scheduler.SendCtrlT(w.Hwnd);
+            bool on = !_photoOn.Remove(w.Hwnd);
+            if (on) _photoOn.Add(w.Hwnd);
+            MarkPhotoRow(row);
+            _lblStatus.Text = (on ? "已切到拍照模式：" : "已切回一般模式：") + w.Title + "（PID " + w.Pid + "）";
+        }
+
+        private void MarkPhotoRow(DataGridViewRow row)
+        {
+            var w = row.Tag as WindowItem;
+            row.DefaultCellStyle.BackColor = w != null && _photoOn.Contains(w.Hwnd) ? PhotoRowColor : Color.Empty;
+        }
+
+        private void ShowSelectedWindow()
+        {
+            var row = SelectedWindowRow();
+            if (row != null) ShowGameWindow(row);
+        }
+
+        /// <summary>把遊戲視窗拉到最上層（縮小中先還原），疊在一起時就看得出是哪一個。</summary>
+        private void ShowGameWindow(DataGridViewRow row)
+        {
+            var w = row.Tag as WindowItem;
+            if (w == null || !Native.IsWindow(w.Hwnd)) return;
+            if (Native.IsIconic(w.Hwnd)) Native.ShowWindow(w.Hwnd, Native.SW_RESTORE);
+            Native.SetForegroundWindow(w.Hwnd);
+            _lblStatus.Text = "已顯示：" + w.Title + "（PID " + w.Pid + "）";
         }
 
         private void RefreshProfileColumn()
@@ -1052,6 +1126,7 @@ namespace XiaoYaOpt
                 RightButton = false,
                 StaggerMs = DefaultStaggerMs,
                 SendCtrlT = _chkCtrlT.Checked,
+                AlreadyInPhotoMode = new HashSet<IntPtr>(_photoOn),
                 MoveCursorForClick = false
             };
         }
@@ -1072,6 +1147,8 @@ namespace XiaoYaOpt
             _btnStart.Enabled = !running;
             _btnStop.Enabled = running;
             _btnRefresh.Enabled = !running;
+            _btnPhoto.Enabled = !running; // 執行中由排程管拍照模式，手動切會讓停止時切錯
+            _btnShow.Enabled = !running;
             _grid.Enabled = !running;
             _grpProfile.Enabled = !running;
             _chkCtrlT.Enabled = !running;
